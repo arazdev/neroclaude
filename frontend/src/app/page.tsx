@@ -54,6 +54,16 @@ interface Settings {
   poll_interval: number;
 }
 
+interface Wallet {
+  usdc_balance: number;
+  positions_value: number;
+  total_portfolio: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  total_pnl: number;
+  open_positions: number;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -448,16 +458,21 @@ export default function Dashboard() {
   const [saving, setSaving] = useState(false);
   const [restarting, setRestarting] = useState(false);
 
+  // Wallet state
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+
   const refresh = async () => {
     try {
       setError(null);
-      const [s, positions] = await Promise.all([
+      const [s, positions, w] = await Promise.all([
         apiFetch<Summary>("/api/summary"),
         apiFetch<{ open: Position[]; closed: Position[] }>("/api/positions"),
+        apiFetch<Wallet>("/api/wallet").catch(() => null),
       ]);
       setSummary(s);
       setOpenPos(positions.open);
       setClosedPos(positions.closed);
+      if (w) setWallet(w);
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (e: unknown) {
       const err = e as Error;
@@ -627,6 +642,55 @@ export default function Dashboard() {
           }}
         >
           {error}
+        </div>
+      )}
+
+      {/* Wallet Overview */}
+      {wallet && (
+        <div
+          style={{
+            background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
+            borderRadius: 16,
+            padding: "24px",
+            marginBottom: 24,
+            border: "1px solid #333",
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>
+            WALLET BALANCE
+          </div>
+          <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: "#4ade80" }}>
+                ${wallet.usdc_balance.toFixed(2)}
+              </div>
+              <div style={{ fontSize: 12, color: "#666" }}>Available USDC</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 24, fontWeight: 600, color: "#60a5fa" }}>
+                ${wallet.positions_value.toFixed(2)}
+              </div>
+              <div style={{ fontSize: 12, color: "#666" }}>In Positions</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 24, fontWeight: 600, color: "#fff" }}>
+                ${wallet.total_portfolio.toFixed(2)}
+              </div>
+              <div style={{ fontSize: 12, color: "#666" }}>Total Portfolio</div>
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: 24,
+                  fontWeight: 600,
+                  color: wallet.total_pnl >= 0 ? "#4ade80" : "#f87171",
+                }}
+              >
+                {wallet.total_pnl >= 0 ? "+" : ""}${wallet.total_pnl.toFixed(2)}
+              </div>
+              <div style={{ fontSize: 12, color: "#666" }}>Total P&L</div>
+            </div>
+          </div>
         </div>
       )}
 
