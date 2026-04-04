@@ -46,12 +46,26 @@ interface Summary {
   time: string;
 }
 
-async function apiFetch<T>(path: string): Promise<T> {
-  const headers: Record<string, string> = {};
+interface Settings {
+  dry_run: boolean;
+  bot_mode: string;
+  max_order_usdc: number;
+  max_position_usdc: number;
+  poll_interval: number;
+}
+
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
   if (API_SECRET) {
     headers["Authorization"] = `Bearer ${API_SECRET}`;
   }
-  const res = await fetch(`${API_URL}${path}`, { headers, cache: "no-store" });
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: { ...headers, ...options?.headers },
+    cache: "no-store",
+  });
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json();
 }
@@ -182,7 +196,7 @@ function PositionRow({ p }: { p: Position }) {
           flexWrap: "wrap",
         }}
       >
-        <span>token: {p.token_id.slice(0, 16)}…</span>
+        <span>token: {p.token_id.slice(0, 16)}...</span>
         <span>opened: {p.opened_at.slice(0, 19)}Z</span>
         {p.pnl !== null && (
           <span style={{ color: p.pnl >= 0 ? "#4ade80" : "#f87171" }}>
@@ -204,12 +218,235 @@ function PositionRow({ p }: { p: Position }) {
   );
 }
 
+function SettingsPanel({
+  settings,
+  onSave,
+  onRestart,
+  onClose,
+  saving,
+  restarting,
+}: {
+  settings: Settings;
+  onSave: (s: Settings) => void;
+  onRestart: () => void;
+  onClose: () => void;
+  saving: boolean;
+  restarting: boolean;
+}) {
+  const [local, setLocal] = useState<Settings>(settings);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.8)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "#1a1a2e",
+          borderRadius: 16,
+          padding: 28,
+          width: 400,
+          maxWidth: "90vw",
+          border: "1px solid #333",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ margin: "0 0 20px", fontSize: 20 }}>Settings</h2>
+
+        {/* DRY RUN toggle */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ flex: 1, fontSize: 14 }}>DRY RUN (paper trading)</span>
+            <button
+              onClick={() => setLocal({ ...local, dry_run: !local.dry_run })}
+              style={{
+                background: local.dry_run ? "#facc15" : "#333",
+                color: local.dry_run ? "#000" : "#888",
+                border: "none",
+                borderRadius: 6,
+                padding: "6px 16px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              {local.dry_run ? "ON" : "OFF"}
+            </button>
+          </label>
+        </div>
+
+        {/* BOT MODE */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+            Bot Mode
+          </label>
+          <select
+            value={local.bot_mode}
+            onChange={(e) => setLocal({ ...local, bot_mode: e.target.value })}
+            style={{
+              width: "100%",
+              background: "#0d0d15",
+              color: "#fff",
+              border: "1px solid #333",
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 14,
+            }}
+          >
+            <option value="claude">Claude AI Only</option>
+            <option value="arb">Arbitrage Only</option>
+            <option value="cross">Cross-Platform Only</option>
+            <option value="mm">Market Making Only</option>
+            <option value="all">All Strategies</option>
+          </select>
+        </div>
+
+        {/* MAX ORDER */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+            Max Order Size (USDC)
+          </label>
+          <input
+            type="number"
+            value={local.max_order_usdc}
+            onChange={(e) =>
+              setLocal({ ...local, max_order_usdc: Number(e.target.value) })
+            }
+            style={{
+              width: "100%",
+              background: "#0d0d15",
+              color: "#fff",
+              border: "1px solid #333",
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 14,
+            }}
+          />
+        </div>
+
+        {/* MAX POSITION */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+            Max Position Size (USDC)
+          </label>
+          <input
+            type="number"
+            value={local.max_position_usdc}
+            onChange={(e) =>
+              setLocal({ ...local, max_position_usdc: Number(e.target.value) })
+            }
+            style={{
+              width: "100%",
+              background: "#0d0d15",
+              color: "#fff",
+              border: "1px solid #333",
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 14,
+            }}
+          />
+        </div>
+
+        {/* POLL INTERVAL */}
+        <div style={{ marginBottom: 24 }}>
+          <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+            Poll Interval (seconds)
+          </label>
+          <input
+            type="number"
+            value={local.poll_interval}
+            onChange={(e) =>
+              setLocal({ ...local, poll_interval: Number(e.target.value) })
+            }
+            style={{
+              width: "100%",
+              background: "#0d0d15",
+              color: "#fff",
+              border: "1px solid #333",
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 14,
+            }}
+          />
+        </div>
+
+        {/* Buttons */}
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={() => onSave(local)}
+            disabled={saving}
+            style={{
+              flex: 1,
+              background: "#4ade80",
+              color: "#000",
+              border: "none",
+              borderRadius: 8,
+              padding: "12px",
+              fontWeight: 700,
+              cursor: saving ? "wait" : "pointer",
+              opacity: saving ? 0.7 : 1,
+            }}
+          >
+            {saving ? "Saving..." : "Save Settings"}
+          </button>
+          <button
+            onClick={onRestart}
+            disabled={restarting}
+            style={{
+              flex: 1,
+              background: "#f87171",
+              color: "#000",
+              border: "none",
+              borderRadius: 8,
+              padding: "12px",
+              fontWeight: 700,
+              cursor: restarting ? "wait" : "pointer",
+              opacity: restarting ? 0.7 : 1,
+            }}
+          >
+            {restarting ? "Restarting..." : "Restart Bot"}
+          </button>
+        </div>
+
+        <button
+          onClick={onClose}
+          style={{
+            width: "100%",
+            marginTop: 12,
+            background: "transparent",
+            color: "#888",
+            border: "1px solid #333",
+            borderRadius: 8,
+            padding: "10px",
+            cursor: "pointer",
+          }}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [openPos, setOpenPos] = useState<Position[]>([]);
   const [closedPos, setClosedPos] = useState<Position[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<string>("");
+
+  // Settings state
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   const refresh = async () => {
     try {
@@ -222,19 +459,75 @@ export default function Dashboard() {
       setOpenPos(positions.open);
       setClosedPos(positions.closed);
       setLastRefresh(new Date().toLocaleTimeString());
-    } catch (e: any) {
-      setError(e.message || "Failed to fetch");
+    } catch (e: unknown) {
+      const err = e as Error;
+      setError(err.message || "Failed to fetch");
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const s = await apiFetch<Settings>("/api/settings");
+      setSettings(s);
+      setShowSettings(true);
+    } catch (e: unknown) {
+      const err = e as Error;
+      setError("Failed to load settings: " + err.message);
+    }
+  };
+
+  const saveSettings = async (s: Settings) => {
+    setSaving(true);
+    try {
+      await apiFetch("/api/settings", {
+        method: "POST",
+        body: JSON.stringify(s),
+      });
+      setSettings(s);
+      setShowSettings(false);
+      refresh();
+    } catch (e: unknown) {
+      const err = e as Error;
+      setError("Failed to save: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restartBot = async () => {
+    setRestarting(true);
+    try {
+      await apiFetch("/api/restart", { method: "POST" });
+      setShowSettings(false);
+      setTimeout(refresh, 3000);
+    } catch (e: unknown) {
+      const err = e as Error;
+      setError("Failed to restart: " + err.message);
+    } finally {
+      setRestarting(false);
     }
   };
 
   useEffect(() => {
     refresh();
-    const interval = setInterval(refresh, 15_000); // auto-refresh every 15s
+    const interval = setInterval(refresh, 15_000);
     return () => clearInterval(interval);
   }, []);
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 20px" }}>
+      {/* Settings Modal */}
+      {showSettings && settings && (
+        <SettingsPanel
+          settings={settings}
+          onSave={saveSettings}
+          onRestart={restartBot}
+          onClose={() => setShowSettings(false)}
+          saving={saving}
+          restarting={restarting}
+        />
+      )}
+
       {/* Header */}
       <div
         style={{
@@ -281,7 +574,21 @@ export default function Dashboard() {
             )}
           </div>
         </div>
-        <div style={{ textAlign: "right" }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={loadSettings}
+            style={{
+              background: "#333",
+              color: "#fff",
+              border: "1px solid #444",
+              borderRadius: 8,
+              padding: "8px 16px",
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Settings
+          </button>
           <button
             onClick={refresh}
             style={{
@@ -296,13 +603,15 @@ export default function Dashboard() {
           >
             Refresh
           </button>
-          {lastRefresh && (
-            <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>
-              {lastRefresh}
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Last refresh time */}
+      {lastRefresh && (
+        <div style={{ fontSize: 11, color: "#555", marginBottom: 16, textAlign: "right" }}>
+          Last updated: {lastRefresh}
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -317,7 +626,7 @@ export default function Dashboard() {
             fontSize: 14,
           }}
         >
-          Connection error: {error}
+          {error}
         </div>
       )}
 
