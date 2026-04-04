@@ -1,15 +1,15 @@
 #!/bin/bash
-# Deploy BOTCLAUDE on a fresh Ubuntu/Debian VPS
+# Deploy NEROCLAUDE on a fresh Ubuntu/Debian VPS
 # Usage: ssh into your server, clone your repo, then run:
 #   cd NEROCLAUDE/backend && bash deploy.sh
 
 set -e
 
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVICE_NAME="botclaude"
+SERVICE_NAME="neroclaude"
 PYTHON_VERSION="3.13"
 
-echo "=== BOTCLAUDE Deploy ==="
+echo "=== NEROCLAUDE Deploy ==="
 
 # 1. Install Python + venv
 echo "[1/5] Installing system packages..."
@@ -35,7 +35,7 @@ fi
 echo "[3/5] Installing systemd services..."
 sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
 [Unit]
-Description=BOTCLAUDE Polymarket Trading Bot
+Description=NEROCLAUDE Polymarket Trading Bot
 After=network.target
 
 [Service]
@@ -63,7 +63,7 @@ EOF
 API_PORT=$(grep -oP 'API_PORT=\K[0-9]+' .env 2>/dev/null || echo 8080)
 sudo tee /etc/systemd/system/${SERVICE_NAME}-api.service > /dev/null <<EOF
 [Unit]
-Description=BOTCLAUDE API Server
+Description=NEROCLAUDE API Server
 After=network.target
 
 [Service]

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "BOTCLAUDE Dashboard",
+  title: "NEROCLAUDE Dashboard",
   description: "Polymarket trading bot position tracker",
 };
 

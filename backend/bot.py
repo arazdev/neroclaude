@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BOTCLAUDE — Polymarket trading bot powered by Claude.
+NEROCLAUDE — Polymarket trading bot powered by Claude.
 
 Modes:
   claude  — AI directional trading (ask Claude for BUY/SELL/HOLD)

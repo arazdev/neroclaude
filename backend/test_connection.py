@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 print("=" * 60)
-print("BOTCLAUDE — Connection Test")
+print("NEROCLAUDE — Connection Test")
 print("=" * 60)
 
 # 1. Test config loading

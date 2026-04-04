@@ -15,7 +15,7 @@ from position_tracker import PositionTracker
 cfg = Config()
 tracker = PositionTracker()
 
-app = FastAPI(title="BOTCLAUDE API", version="1.0.0")
+app = FastAPI(title="NEROCLAUDE API", version="1.0.0")
 
 # Allow the Vercel frontend to call this API
 ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
@@ -42,7 +42,7 @@ async def check_auth(request: Request, call_next):
 
 @app.get("/")
 def health():
-    return {"status": "ok", "bot": "BOTCLAUDE", "time": datetime.now(timezone.utc).isoformat()}
+    return {"status": "ok", "bot": "NEROCLAUDE", "time": datetime.now(timezone.utc).isoformat()}
 
 
 @app.get("/api/positions")

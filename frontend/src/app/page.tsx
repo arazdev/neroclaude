@@ -246,7 +246,7 @@ export default function Dashboard() {
       >
         <div>
           <h1 style={{ margin: 0, fontSize: 28, letterSpacing: -1 }}>
-            BOTCLAUDE
+            NEROCLAUDE
           </h1>
           <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
             Polymarket Trading Dashboard
