@@ -217,46 +217,57 @@ def restart_bot():
 # Wallet & Portfolio API
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Lazy-load polymarket client to avoid import errors if credentials missing
+_poly_client = None
+
+def get_poly_client():
+    global _poly_client
+    if _poly_client is None:
+        try:
+            _poly_client = PolymarketClient(cfg)
+        except Exception:
+            return None
+    return _poly_client
+
+
 @app.get("/api/wallet")
 def get_wallet():
     """Get wallet balance and portfolio value."""
-    try:
-        client = PolymarketClient(cfg)
-        # Get USDC balance from Polymarket CLOB
-        balance_info = client._trader.get_balance_allowance()
-        usdc_balance = float(balance_info.get("balance", 0)) / 1e6  # Convert from wei
-        
-        # Get current positions value
-        tracker._positions = tracker._load()
-        open_pos = tracker.open_positions
-        total_exposure = tracker.total_exposure()
-        realized_pnl = tracker.total_realized_pnl()
-        
-        # Calculate unrealized P&L (simplified - would need current prices for accuracy)
-        unrealized_pnl = 0.0
-        
-        return {
-            "usdc_balance": round(usdc_balance, 2),
-            "positions_value": round(total_exposure, 2),
-            "total_portfolio": round(usdc_balance + total_exposure, 2),
-            "realized_pnl": round(realized_pnl, 2),
-            "unrealized_pnl": round(unrealized_pnl, 2),
-            "total_pnl": round(realized_pnl + unrealized_pnl, 2),
-            "open_positions": len(open_pos),
-            "time": datetime.now(timezone.utc).isoformat(),
-        }
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Failed to fetch wallet: {str(e)}"},
-        )
+    tracker._positions = tracker._load()
+    open_pos = tracker.open_positions
+    total_exposure = tracker.total_exposure()
+    realized_pnl = tracker.total_realized_pnl()
+    
+    # Try to get USDC balance from Polymarket
+    usdc_balance = 0.0
+    client = get_poly_client()
+    if client:
+        try:
+            balance_info = client._trader.get_balance_allowance()
+            if balance_info and "balance" in balance_info:
+                usdc_balance = float(balance_info.get("balance", 0)) / 1e6
+        except Exception:
+            pass  # Wallet query failed, continue with 0
+    
+    return {
+        "usdc_balance": round(usdc_balance, 2),
+        "positions_value": round(total_exposure, 2),
+        "total_portfolio": round(usdc_balance + total_exposure, 2),
+        "realized_pnl": round(realized_pnl, 2),
+        "unrealized_pnl": 0.0,
+        "total_pnl": round(realized_pnl, 2),
+        "open_positions": len(open_pos),
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.get("/api/orders")
 def get_orders():
     """Get open orders on Polymarket."""
+    client = get_poly_client()
+    if not client:
+        return {"orders": [], "count": 0, "error": "Client not available"}
     try:
-        client = PolymarketClient(cfg)
         orders = client.get_open_orders()
         return {"orders": orders, "count": len(orders)}
     except Exception as e:
