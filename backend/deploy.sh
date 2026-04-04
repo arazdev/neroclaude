@@ -1,6 +1,7 @@
 #!/bin/bash
 # Deploy BOTCLAUDE on a fresh Ubuntu/Debian VPS
-# Usage: ssh into your server, clone your repo, then run: bash deploy.sh
+# Usage: ssh into your server, clone your repo, then run:
+#   cd NEROCLAUDE/backend && bash deploy.sh
 
 set -e
 

@@ -1,9 +1,14 @@
 .env
 __pycache__/
 *.pyc
-.venv/
-venv/
-positions.json
 *.log
-dashboard/node_modules/
-dashboard/.next/
+
+# Backend
+backend/.venv/
+backend/venv/
+backend/positions.json
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local

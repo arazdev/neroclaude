@@ -23,6 +23,11 @@ interface Position {
   pnl: number | null;
 }
 
+interface StrategyStats {
+  open: number;
+  exposure: number;
+}
+
 interface Summary {
   open_count: number;
   closed_count: number;
@@ -31,6 +36,13 @@ interface Summary {
   max_position_usdc: number;
   max_order_usdc: number;
   dry_run: boolean;
+  bot_mode: string;
+  strategies: {
+    claude: StrategyStats;
+    arb: StrategyStats;
+    cross: StrategyStats;
+    mm: StrategyStats;
+  };
   time: string;
 }
 
@@ -78,6 +90,15 @@ function PositionRow({ p }: { p: Position }) {
   const sideColor = p.side === "BUY" ? "#4ade80" : "#f87171";
   const confPct = (p.confidence * 100).toFixed(0);
 
+  const strategyMap: Record<string, { label: string; color: string }> = {
+    ARB_YES: { label: "ARB", color: "#facc15" },
+    ARB_NO: { label: "ARB", color: "#facc15" },
+    CROSS_ARB: { label: "CROSS", color: "#a78bfa" },
+    MM_BID_YES: { label: "MM", color: "#38bdf8" },
+    MM_BID_NO: { label: "MM", color: "#38bdf8" },
+  };
+  const strategy = strategyMap[p.action] || { label: "AI", color: "#f472b6" };
+
   return (
     <div
       style={{
@@ -98,6 +119,18 @@ function PositionRow({ p }: { p: Position }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span
+            style={{
+              background: strategy.color,
+              color: "#000",
+              padding: "2px 6px",
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 700,
+            }}
+          >
+            {strategy.label}
+          </span>
           <span
             style={{
               background: sideColor,
@@ -232,6 +265,20 @@ export default function Dashboard() {
                 DRY RUN
               </span>
             )}
+            {summary?.bot_mode && (
+              <span
+                style={{
+                  marginLeft: 6,
+                  background: "#333",
+                  color: "#ccc",
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  fontSize: 11,
+                }}
+              >
+                {summary.bot_mode.toUpperCase()}
+              </span>
+            )}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -281,7 +328,7 @@ export default function Dashboard() {
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
             gap: 12,
-            marginBottom: 32,
+            marginBottom: 20,
           }}
         >
           <StatCard label="Open Positions" value={String(summary.open_count)} />
@@ -303,6 +350,46 @@ export default function Dashboard() {
             label="Closed Trades"
             value={String(summary.closed_count)}
           />
+        </div>
+      )}
+
+      {/* Strategy breakdown */}
+      {summary?.strategies && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 10,
+            marginBottom: 32,
+          }}
+        >
+          {[
+            { key: "claude", label: "AI (Claude)", color: "#f472b6" },
+            { key: "arb", label: "Arbitrage", color: "#facc15" },
+            { key: "cross", label: "Cross-Platform", color: "#a78bfa" },
+            { key: "mm", label: "Market Making", color: "#38bdf8" },
+          ].map(({ key, label, color }) => {
+            const s = summary.strategies[key as keyof typeof summary.strategies];
+            return (
+              <div
+                key={key}
+                style={{
+                  background: "#141420",
+                  borderRadius: 10,
+                  padding: "12px 16px",
+                  borderLeft: `3px solid ${color}`,
+                }}
+              >
+                <div style={{ fontSize: 11, color: "#888" }}>{label}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color }}>
+                  {s.open} open
+                </div>
+                <div style={{ fontSize: 12, color: "#555" }}>
+                  ${s.exposure.toFixed(2)}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

@@ -40,6 +40,19 @@ class Config:
     poll_interval: int = int(_env("POLL_INTERVAL_SECONDS", "60"))
     dry_run: bool = _env("DRY_RUN", "true").lower() == "true"
     log_level: str = _env("LOG_LEVEL", "INFO")
+    # Modes: "claude" (AI directional), "arb" (YES+NO mispricing),
+    #        "cross" (Kalshi cross-platform), "mm" (market making), "all"
+    bot_mode: str = _env("BOT_MODE", "all")
+
+    # Arbitrage scanner
+    arb_fee_buffer: float = float(_env("ARB_FEE_BUFFER", "0.02"))
+    arb_min_profit_pct: float = float(_env("ARB_MIN_PROFIT_PCT", "0.5"))
+    arb_max_usdc: float = float(_env("ARB_MAX_USDC", "25.0"))
+    arb_scan_interval: int = int(_env("ARB_SCAN_INTERVAL", "5"))
+
+    # Market making
+    mm_max_usdc: float = float(_env("MM_MAX_USDC", "25.0"))
+    mm_max_markets: int = int(_env("MM_MAX_MARKETS", "3"))
 
     # API
     api_port: int = int(_env("API_PORT", "8080"))

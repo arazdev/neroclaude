@@ -2,11 +2,12 @@
 """
 BOTCLAUDE — Polymarket trading bot powered by Claude.
 
-Flow per cycle:
-  1. Fetch top active market snapshots from Polymarket.
-  2. For each snapshot, ask Claude for a structured BUY/SELL/HOLD decision.
-  3. Validate the decision through risk checks.
-  4. If approved (and not dry-run), sign and post the order.
+Modes:
+  claude  — AI directional trading (ask Claude for BUY/SELL/HOLD)
+  arb     — Same-market YES+NO mispricing scanner (fast, no AI)
+  cross   — Cross-platform Polymarket vs Kalshi arbitrage
+  mm      — Automated market making (earn the spread)
+  all     — Run all modes each cycle
 """
 
 from __future__ import annotations
@@ -124,27 +125,86 @@ def main() -> None:
         format="%(asctime)s %(name)-12s %(levelname)-8s %(message)s",
     )
 
+    mode = cfg.bot_mode.lower()
+    valid_modes = {"claude", "arb", "cross", "mm", "all"}
+    if mode not in valid_modes:
+        logger.error("Invalid BOT_MODE=%s. Choose from: %s", mode, valid_modes)
+        sys.exit(1)
+
     if cfg.dry_run:
         logger.info("*** DRY RUN MODE — no real orders will be placed ***")
 
+    logger.info("Bot mode: %s", mode.upper())
+
     poly = PolymarketClient(cfg)
-    engine = ClaudeEngine(cfg)
     tracker = PositionTracker()
     risk = RiskManager(cfg, poly, tracker)
+
+    # Only init Claude engine if needed
+    engine = None
+    if mode in ("claude", "all"):
+        engine = ClaudeEngine(cfg)
+
+    # Only init arb scanner if needed
+    arb = None
+    if mode in ("arb", "all"):
+        from arb_scanner import ArbScanner
+        arb = ArbScanner(cfg, poly, tracker)
+
+    # Only init cross-platform arb if needed
+    cross = None
+    if mode in ("cross", "all"):
+        from cross_arb import CrossPlatformArb
+        cross = CrossPlatformArb(cfg, poly, tracker)
+
+    # Only init market maker if needed
+    mm = None
+    if mode in ("mm", "all"):
+        from market_maker import MarketMaker
+        mm = MarketMaker(cfg, poly, tracker)
 
     logger.info("Bot started. Poll interval: %ds", cfg.poll_interval)
 
     backoff = cfg.poll_interval
+    arb_counter = 0  # arb runs more frequently
+
     try:
         while True:
             try:
-                run_cycle(poly, engine, risk, tracker, cfg)
-                backoff = cfg.poll_interval  # reset on success
+                # ── Fast strategies (run every cycle) ────────────
+                if arb:
+                    n = arb.run_scan_cycle(cfg.dry_run)
+                    if n:
+                        logger.info("Arb scanner executed %d trades", n)
+
+                if mm:
+                    n = mm.run_cycle(cfg.dry_run)
+                    if n:
+                        logger.info("Market maker posted %d quotes", n)
+
+                # ── Slower strategies (run at poll_interval) ─────
+                arb_counter += 1
+                full_cycle = arb_counter >= max(1, cfg.poll_interval // max(cfg.arb_scan_interval, 1))
+
+                if full_cycle:
+                    arb_counter = 0
+
+                    if cross:
+                        n = cross.run_scan_cycle(cfg.dry_run)
+                        if n:
+                            logger.info("Cross-platform arb executed %d trades", n)
+
+                    if engine:
+                        run_cycle(poly, engine, risk, tracker, cfg)
+
+                # Log position summary
+                tracker.log_summary()
+
+                backoff = cfg.arb_scan_interval if (arb or mm) else cfg.poll_interval
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
                 logger.exception("Cycle error")
-                # If Claude credits exhausted, back off aggressively
                 if "credit balance is too low" in str(exc):
                     backoff = min(backoff * 4, 3600)
                     logger.warning(
