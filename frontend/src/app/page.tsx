@@ -55,12 +55,20 @@ interface Settings {
 }
 
 interface Wallet {
-  usdc_balance: number;
-  positions_value: number;
-  total_portfolio: number;
+  polymarket: {
+    balance: number;
+    positions_value: number;
+    total: number;
+  };
+  kalshi: {
+    balance: number;
+    available: number;
+  };
+  combined: {
+    total_balance: number;
+    total_portfolio: number;
+  };
   realized_pnl: number;
-  unrealized_pnl: number;
-  total_pnl: number;
   open_positions: number;
 }
 
@@ -656,39 +664,44 @@ export default function Dashboard() {
             border: "1px solid #333",
           }}
         >
-          <div style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>
-            WALLET BALANCE
-          </div>
-          <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 48, flexWrap: "wrap" }}>
+            {/* Polymarket */}
             <div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: "#4ade80" }}>
-                ${wallet.usdc_balance.toFixed(2)}
+              <div style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>POLYMARKET</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: "#a78bfa" }}>
+                ${wallet.polymarket.balance.toFixed(2)}
               </div>
-              <div style={{ fontSize: 12, color: "#666" }}>Available USDC</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 24, fontWeight: 600, color: "#60a5fa" }}>
-                ${wallet.positions_value.toFixed(2)}
+              <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Available USDC</div>
+              <div style={{ fontSize: 16, color: "#60a5fa" }}>
+                ${wallet.polymarket.positions_value.toFixed(2)} <span style={{ fontSize: 12, color: "#666" }}>in positions</span>
               </div>
-              <div style={{ fontSize: 12, color: "#666" }}>In Positions</div>
             </div>
+            {/* Kalshi */}
             <div>
-              <div style={{ fontSize: 24, fontWeight: 600, color: "#fff" }}>
-                ${wallet.total_portfolio.toFixed(2)}
+              <div style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>KALSHI</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: "#f472b6" }}>
+                ${wallet.kalshi.balance.toFixed(2)}
               </div>
-              <div style={{ fontSize: 12, color: "#666" }}>Total Portfolio</div>
+              <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Balance</div>
+              <div style={{ fontSize: 16, color: "#60a5fa" }}>
+                ${wallet.kalshi.available.toFixed(2)} <span style={{ fontSize: 12, color: "#666" }}>available</span>
+              </div>
             </div>
+            {/* Combined */}
             <div>
+              <div style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>COMBINED</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: "#4ade80" }}>
+                ${wallet.combined.total_portfolio.toFixed(2)}
+              </div>
+              <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Total Portfolio</div>
               <div
                 style={{
-                  fontSize: 24,
-                  fontWeight: 600,
-                  color: wallet.total_pnl >= 0 ? "#4ade80" : "#f87171",
+                  fontSize: 16,
+                  color: wallet.realized_pnl >= 0 ? "#4ade80" : "#f87171",
                 }}
               >
-                {wallet.total_pnl >= 0 ? "+" : ""}${wallet.total_pnl.toFixed(2)}
+                {wallet.realized_pnl >= 0 ? "+" : ""}${wallet.realized_pnl.toFixed(2)} <span style={{ fontSize: 12, color: "#666" }}>realized P&L</span>
               </div>
-              <div style={{ fontSize: 12, color: "#666" }}>Total P&L</div>
             </div>
           </div>
         </div>

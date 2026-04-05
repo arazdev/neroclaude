@@ -232,30 +232,52 @@ def get_poly_client():
 
 @app.get("/api/wallet")
 def get_wallet():
-    """Get wallet balance and portfolio value."""
+    """Get wallet balance and portfolio value for both platforms."""
     tracker._positions = tracker._load()
     open_pos = tracker.open_positions
     total_exposure = tracker.total_exposure()
     realized_pnl = tracker.total_realized_pnl()
     
-    # Try to get USDC balance from Polymarket
-    usdc_balance = 0.0
+    # Polymarket balance
+    poly_balance = 0.0
     client = get_poly_client()
     if client:
         try:
             balance_info = client._trader.get_balance_allowance()
             if balance_info and "balance" in balance_info:
-                usdc_balance = float(balance_info.get("balance", 0)) / 1e6
+                poly_balance = float(balance_info.get("balance", 0)) / 1e6
         except Exception:
-            pass  # Wallet query failed, continue with 0
+            pass
+    
+    # Kalshi balance
+    kalshi_balance = 0.0
+    kalshi_available = 0.0
+    kalshi_client = get_kalshi_client()
+    if kalshi_client and kalshi_client.is_authenticated:
+        try:
+            bal = kalshi_client.get_balance()
+            kalshi_balance = bal.get("balance", 0.0)
+            kalshi_available = bal.get("available", 0.0)
+        except Exception:
+            pass
+    
+    total_balance = poly_balance + kalshi_balance
     
     return {
-        "usdc_balance": round(usdc_balance, 2),
-        "positions_value": round(total_exposure, 2),
-        "total_portfolio": round(usdc_balance + total_exposure, 2),
+        "polymarket": {
+            "balance": round(poly_balance, 2),
+            "positions_value": round(total_exposure, 2),
+            "total": round(poly_balance + total_exposure, 2),
+        },
+        "kalshi": {
+            "balance": round(kalshi_balance, 2),
+            "available": round(kalshi_available, 2),
+        },
+        "combined": {
+            "total_balance": round(total_balance, 2),
+            "total_portfolio": round(total_balance + total_exposure, 2),
+        },
         "realized_pnl": round(realized_pnl, 2),
-        "unrealized_pnl": 0.0,
-        "total_pnl": round(realized_pnl, 2),
         "open_positions": len(open_pos),
         "time": datetime.now(timezone.utc).isoformat(),
     }
