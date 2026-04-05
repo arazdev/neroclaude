@@ -565,7 +565,7 @@ export default function Dashboard() {
             NEROCLAUDE
           </h1>
           <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
-            Polymarket Trading Dashboard
+            Polymarket & Kalshi Trading Dashboard
             {summary?.dry_run && (
               <span
                 style={{
