@@ -114,6 +114,15 @@ interface Wallet {
   open_positions: number;
 }
 
+interface PaymentMethod {
+  id: string;
+  type: string;
+  name: string;
+  last4: string;
+  deposit_limit: number;
+  withdrawal_limit: number;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -564,6 +573,287 @@ function SettingsPanel({
   );
 }
 
+function DepositModal({
+  platform,
+  onClose,
+  onSuccess,
+}: {
+  platform: "polymarket" | "kalshi";
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [selectedMethod, setSelectedMethod] = useState<string>("");
+  const [amount, setAmount] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [mode, setMode] = useState<"deposit" | "withdraw">("deposit");
+
+  useEffect(() => {
+    if (platform === "polymarket") {
+      loadPaymentMethods();
+    }
+  }, [platform]);
+
+  const loadPaymentMethods = async () => {
+    try {
+      const data = await apiFetch<{ methods: PaymentMethod[] }>("/api/polymarket-us/payment-methods");
+      setPaymentMethods(data.methods || []);
+      if (data.methods?.length > 0) {
+        setSelectedMethod(data.methods[0].id);
+      }
+    } catch {
+      setError("Failed to load payment methods");
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!amount || parseFloat(amount) <= 0) {
+      setError("Enter a valid amount");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      if (platform === "polymarket") {
+        const endpoint = mode === "deposit" ? "/api/polymarket-us/deposit" : "/api/polymarket-us/withdraw";
+        const result = await apiFetch<{ success?: boolean; error?: string }>(endpoint, {
+          method: "POST",
+          body: JSON.stringify({
+            payment_method_id: selectedMethod,
+            amount: parseFloat(amount),
+          }),
+        });
+        if (result.error) {
+          setError(result.error);
+        } else {
+          setSuccess(`${mode === "deposit" ? "Deposit" : "Withdrawal"} initiated! It may take 1-3 business days to process.`);
+          setTimeout(() => {
+            onSuccess();
+            onClose();
+          }, 2000);
+        }
+      } else {
+        // Kalshi doesn't support API deposits
+        window.open("https://kalshi.com/wallet", "_blank");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to process");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isKalshi = platform === "kalshi";
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.8)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "#1a1a2e",
+          borderRadius: 16,
+          padding: 28,
+          width: 420,
+          maxWidth: "90vw",
+          border: `1px solid ${platform === "polymarket" ? "#8b5cf6" : "#ec4899"}`,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ margin: "0 0 20px", fontSize: 20, color: platform === "polymarket" ? "#a78bfa" : "#f472b6" }}>
+          {platform === "polymarket" ? "Polymarket US" : "Kalshi"} Wallet
+        </h2>
+
+        {isKalshi ? (
+          <div>
+            <p style={{ color: "#888", marginBottom: 20 }}>
+              Kalshi deposits must be made directly on their website due to regulatory requirements.
+            </p>
+            <a
+              href="https://kalshi.com/wallet"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "block",
+                background: "#ec4899",
+                color: "#fff",
+                padding: "14px",
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                textDecoration: "none",
+                textAlign: "center",
+              }}
+            >
+              Open Kalshi Wallet →
+            </a>
+          </div>
+        ) : (
+          <>
+            {/* Deposit / Withdraw toggle */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+              <button
+                onClick={() => setMode("deposit")}
+                style={{
+                  flex: 1,
+                  background: mode === "deposit" ? "#4ade80" : "#1a1a2e",
+                  color: mode === "deposit" ? "#000" : "#888",
+                  border: mode === "deposit" ? "2px solid #4ade80" : "2px solid #333",
+                  borderRadius: 8,
+                  padding: "10px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Deposit
+              </button>
+              <button
+                onClick={() => setMode("withdraw")}
+                style={{
+                  flex: 1,
+                  background: mode === "withdraw" ? "#f87171" : "#1a1a2e",
+                  color: mode === "withdraw" ? "#000" : "#888",
+                  border: mode === "withdraw" ? "2px solid #f87171" : "2px solid #333",
+                  borderRadius: 8,
+                  padding: "10px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Withdraw
+              </button>
+            </div>
+
+            {/* Payment method selector */}
+            {paymentMethods.length > 0 ? (
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+                  Payment Method
+                </label>
+                <select
+                  value={selectedMethod}
+                  onChange={(e) => setSelectedMethod(e.target.value)}
+                  style={{
+                    width: "100%",
+                    background: "#0d0d15",
+                    color: "#fff",
+                    border: "1px solid #333",
+                    borderRadius: 8,
+                    padding: "12px",
+                    fontSize: 14,
+                  }}
+                >
+                  {paymentMethods.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} •••• {m.last4} ({m.type.toUpperCase()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 20, color: "#888", fontSize: 14, padding: 16, background: "#0d0d15", borderRadius: 8 }}>
+                No payment methods linked.{" "}
+                <a href="https://polymarket.us/wallet" target="_blank" style={{ color: "#8b5cf6" }}>
+                  Link a bank account →
+                </a>
+              </div>
+            )}
+
+            {/* Amount input */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+                Amount (USD)
+              </label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                min="1"
+                max="10000"
+                style={{
+                  width: "100%",
+                  background: "#0d0d15",
+                  color: "#fff",
+                  border: "1px solid #333",
+                  borderRadius: 8,
+                  padding: "12px",
+                  fontSize: 18,
+                }}
+              />
+              <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>
+                Min: $1 • Max: $10,000 per transaction
+              </div>
+            </div>
+
+            {/* Error/Success messages */}
+            {error && (
+              <div style={{ background: "#2a1515", border: "1px solid #f87171", borderRadius: 8, padding: 12, marginBottom: 16, color: "#f87171", fontSize: 13 }}>
+                {error}
+              </div>
+            )}
+            {success && (
+              <div style={{ background: "#1a2a1a", border: "1px solid #4ade80", borderRadius: 8, padding: 12, marginBottom: 16, color: "#4ade80", fontSize: 13 }}>
+                {success}
+              </div>
+            )}
+
+            {/* Submit button */}
+            <button
+              onClick={handleSubmit}
+              disabled={loading || !selectedMethod || !amount}
+              style={{
+                width: "100%",
+                background: mode === "deposit" ? "#4ade80" : "#f87171",
+                color: "#000",
+                border: "none",
+                borderRadius: 8,
+                padding: "14px",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: loading ? "wait" : "pointer",
+                opacity: loading || !selectedMethod || !amount ? 0.6 : 1,
+              }}
+            >
+              {loading ? "Processing..." : mode === "deposit" ? `Deposit $${amount || "0"}` : `Withdraw $${amount || "0"}`}
+            </button>
+          </>
+        )}
+
+        <button
+          onClick={onClose}
+          style={{
+            width: "100%",
+            marginTop: 12,
+            background: "transparent",
+            color: "#888",
+            border: "1px solid #333",
+            borderRadius: 8,
+            padding: "10px",
+            cursor: "pointer",
+          }}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [openPos, setOpenPos] = useState<Position[]>([]);
@@ -588,6 +878,9 @@ export default function Dashboard() {
   const [kalshiOrders, setKalshiOrders] = useState<KalshiOrderHistory | null>(null);
   const [kalshiPositions, setKalshiPositions] = useState<KalshiPositions | null>(null);
   const [showKalshiOrders, setShowKalshiOrders] = useState(false);
+
+  // Deposit modal state
+  const [showDeposit, setShowDeposit] = useState<"polymarket" | "kalshi" | null>(null);
 
   const fetchKalshiOrders = async () => {
     try {
@@ -692,6 +985,15 @@ export default function Dashboard() {
           onClose={() => setShowSettings(false)}
           saving={saving}
           restarting={restarting}
+        />
+      )}
+
+      {/* Deposit Modal */}
+      {showDeposit && (
+        <DepositModal
+          platform={showDeposit}
+          onClose={() => setShowDeposit(null)}
+          onSuccess={refresh}
         />
       )}
 
@@ -1071,14 +1373,29 @@ export default function Dashboard() {
           <div style={{ display: "flex", gap: 48, flexWrap: "wrap" }}>
             {/* Polymarket */}
             <div>
-              <div style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>POLYMARKET</div>
+              <div style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>POLYMARKET US</div>
               <div style={{ fontSize: 28, fontWeight: 700, color: "#a78bfa" }}>
                 ${wallet.polymarket.balance.toFixed(2)}
               </div>
               <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Available USDC</div>
-              <div style={{ fontSize: 16, color: "#60a5fa" }}>
+              <div style={{ fontSize: 16, color: "#60a5fa", marginBottom: 12 }}>
                 ${wallet.polymarket.positions_value.toFixed(2)} <span style={{ fontSize: 12, color: "#666" }}>in positions</span>
               </div>
+              <button
+                onClick={() => setShowDeposit("polymarket")}
+                style={{
+                  background: "#8b5cf6",
+                  color: "#fff",
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                + Deposit / Withdraw
+              </button>
             </div>
             {/* Kalshi */}
             <div>
@@ -1087,13 +1404,28 @@ export default function Dashboard() {
                 ${wallet.kalshi.balance.toFixed(2)}
               </div>
               <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Cash Balance</div>
-              <div style={{ fontSize: 16, color: "#60a5fa" }}>
+              <div style={{ fontSize: 16, color: "#60a5fa", marginBottom: 12 }}>
                 {kalshiPositions ? (
                   <>{kalshiPositions.positions_count} <span style={{ fontSize: 12, color: "#666" }}>open positions</span></>
                 ) : (
                   <span style={{ fontSize: 12, color: "#666" }}>Loading...</span>
                 )}
               </div>
+              <button
+                onClick={() => setShowDeposit("kalshi")}
+                style={{
+                  background: "#ec4899",
+                  color: "#fff",
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                + Deposit / Withdraw
+              </button>
             </div>
             {/* Combined */}
             <div>
