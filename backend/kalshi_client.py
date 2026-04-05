@@ -1,25 +1,17 @@
 """Kalshi exchange client for trading and cross-platform arbitrage.
 
+Uses the official kalshi-python SDK for authenticated trading.
 Kalshi API v2 docs: https://docs.kalshi.com/
-Base URL: https://api.elections.kalshi.com/trade-api/v2  (production)
-
-Supports both read-only market data and authenticated trading.
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import logging
 import os
-import time
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Literal
 
 import httpx
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 logger = logging.getLogger("kalshi")
 
@@ -77,85 +69,45 @@ class KalshiClient:
 
     def __init__(self) -> None:
         self._api_key = os.getenv("KALSHI_API_KEY", "")
-        self._private_key = self._load_private_key()
-        self._member_id: str | None = None
+        self._sdk_client = None
+        self._init_sdk()
         
+        # Public endpoint client (no auth needed)
         self._http = httpx.Client(
             base_url=KALSHI_API_BASE,
             timeout=15,
             headers={"Accept": "application/json", "Content-Type": "application/json"},
         )
     
-    def _load_private_key(self) -> rsa.RSAPrivateKey | None:
-        """Load RSA private key for API authentication."""
+    def _init_sdk(self) -> None:
+        """Initialize the official Kalshi SDK for authenticated requests."""
         key_file = os.getenv("KALSHI_PRIVATE_KEY_FILE", "")
-        if not key_file or not os.path.exists(key_file):
-            # Try inline key from env
-            key_data = os.getenv("KALSHI_PRIVATE_KEY", "")
-            if not key_data:
-                return None
-            key_bytes = key_data.encode()
-        else:
-            with open(key_file, "rb") as f:
-                key_bytes = f.read()
+        if not self._api_key or not key_file:
+            return
         
         try:
-            return serialization.load_pem_private_key(key_bytes, password=None)
+            from kalshi_python import Configuration, KalshiClient as SDKClient
+            
+            with open(key_file, "r") as f:
+                private_key = f.read()
+            
+            config = Configuration(host=KALSHI_API_BASE)
+            config.api_key_id = self._api_key
+            config.private_key_pem = private_key
+            
+            self._sdk_client = SDKClient(config)
+            logger.info("Kalshi SDK initialized successfully")
+        except FileNotFoundError:
+            logger.warning("Kalshi private key file not found: %s", key_file)
+        except ImportError:
+            logger.warning("kalshi-python package not installed")
         except Exception as e:
-            logger.warning("Failed to load Kalshi private key: %s", e)
-            return None
+            logger.warning("Failed to initialize Kalshi SDK: %s", e)
     
     @property
     def is_authenticated(self) -> bool:
         """Check if client has valid credentials for trading."""
-        return bool(self._api_key and self._private_key)
-    
-    def _sign_request(self, method: str, path: str, body: str = "") -> dict[str, str]:
-        """Generate authentication headers with RSA-PSS signature."""
-        if not self._private_key or not self._api_key:
-            return {}
-        
-        timestamp = str(int(time.time() * 1000))
-        # Message to sign: timestamp + method + path + body
-        message = f"{timestamp}{method.upper()}{path}{body}"
-        
-        signature = self._private_key.sign(
-            message.encode(),
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH,
-            ),
-            hashes.SHA256(),
-        )
-        
-        return {
-            "KALSHI-ACCESS-KEY": self._api_key,
-            "KALSHI-ACCESS-SIGNATURE": base64.b64encode(signature).decode(),
-            "KALSHI-ACCESS-TIMESTAMP": timestamp,
-        }
-    
-    def _auth_get(self, path: str, params: dict | None = None) -> dict[str, Any]:
-        """Authenticated GET request."""
-        headers = self._sign_request("GET", path)
-        resp = self._http.get(path, params=params, headers=headers)
-        resp.raise_for_status()
-        return resp.json()
-    
-    def _auth_post(self, path: str, data: dict[str, Any]) -> dict[str, Any]:
-        """Authenticated POST request."""
-        import json
-        body = json.dumps(data)
-        headers = self._sign_request("POST", path, body)
-        resp = self._http.post(path, content=body, headers=headers)
-        resp.raise_for_status()
-        return resp.json()
-    
-    def _auth_delete(self, path: str) -> dict[str, Any]:
-        """Authenticated DELETE request."""
-        headers = self._sign_request("DELETE", path)
-        resp = self._http.delete(path, headers=headers)
-        resp.raise_for_status()
-        return resp.json()
+        return self._sdk_client is not None
 
     # ─────────────────────────────────────────────────────────────────────
     # Public endpoints (no auth required)
@@ -237,60 +189,69 @@ class KalshiClient:
         return markets
 
     # ─────────────────────────────────────────────────────────────────────
-    # Authenticated endpoints (trading)
+    # Authenticated endpoints (trading) - using official SDK
     # ─────────────────────────────────────────────────────────────────────
     
     def get_balance(self) -> dict[str, float]:
         """Get account balance. Returns {'balance': float, 'available': float}."""
-        if not self.is_authenticated:
+        if not self._sdk_client:
             raise RuntimeError("Kalshi trading requires authentication. Set KALSHI_API_KEY and KALSHI_PRIVATE_KEY_FILE.")
         
-        data = self._auth_get("/portfolio/balance")
+        balance = self._sdk_client.get_balance()
         return {
-            "balance": float(data.get("balance", 0)) / 100,  # Convert cents to dollars
-            "available": float(data.get("available_balance", data.get("balance", 0))) / 100,
+            "balance": float(getattr(balance, 'balance', 0)) / 100,
+            "available": float(getattr(balance, 'available_balance', getattr(balance, 'balance', 0))) / 100,
         }
     
     def get_positions(self) -> list[KalshiPosition]:
         """Get all open positions."""
-        if not self.is_authenticated:
+        if not self._sdk_client:
             return []
         
-        data = self._auth_get("/portfolio/positions")
-        positions = []
-        for p in data.get("market_positions", []):
-            positions.append(KalshiPosition(
-                ticker=p.get("ticker", ""),
-                market_exposure=float(p.get("market_exposure", 0)),
-                realized_pnl=float(p.get("realized_pnl", 0)),
-                resting_order_count=int(p.get("resting_orders_count", 0)),
-                total_traded=float(p.get("total_traded", 0)),
-                side="yes" if p.get("position", 0) > 0 else "no",
-                quantity=abs(int(p.get("position", 0))),
-            ))
-        return positions
+        try:
+            response = self._sdk_client.get_positions()
+            positions = []
+            for p in getattr(response, 'market_positions', []):
+                pos = int(getattr(p, 'position', 0))
+                positions.append(KalshiPosition(
+                    ticker=getattr(p, 'ticker', ""),
+                    market_exposure=float(getattr(p, 'market_exposure', 0)),
+                    realized_pnl=float(getattr(p, 'realized_pnl', 0)),
+                    resting_order_count=int(getattr(p, 'resting_orders_count', 0)),
+                    total_traded=float(getattr(p, 'total_traded', 0)),
+                    side="yes" if pos > 0 else "no",
+                    quantity=abs(pos),
+                ))
+            return positions
+        except Exception as e:
+            logger.error("Failed to get Kalshi positions: %s", e)
+            return []
     
     def get_orders(self, status: str = "resting") -> list[KalshiOrder]:
         """Get orders. Status can be 'resting', 'pending', 'executed', 'canceled'."""
-        if not self.is_authenticated:
+        if not self._sdk_client:
             return []
         
-        data = self._auth_get("/portfolio/orders", params={"status": status})
-        orders = []
-        for o in data.get("orders", []):
-            orders.append(KalshiOrder(
-                order_id=o.get("order_id", ""),
-                ticker=o.get("ticker", ""),
-                side=o.get("side", ""),
-                type=o.get("type", ""),
-                status=o.get("status", ""),
-                price=float(o.get("yes_price", o.get("no_price", 0))) / 100,
-                size=int(o.get("count", 0)),
-                filled=int(o.get("filled_count", 0)),
-                remaining=int(o.get("remaining_count", 0)),
-                created_time=o.get("created_time", ""),
-            ))
-        return orders
+        try:
+            response = self._sdk_client.get_orders(status=status)
+            orders = []
+            for o in getattr(response, 'orders', []):
+                orders.append(KalshiOrder(
+                    order_id=getattr(o, 'order_id', ""),
+                    ticker=getattr(o, 'ticker', ""),
+                    side=getattr(o, 'side', ""),
+                    type=getattr(o, 'type', ""),
+                    status=getattr(o, 'status', ""),
+                    price=float(getattr(o, 'yes_price', getattr(o, 'no_price', 0))) / 100,
+                    size=int(getattr(o, 'count', 0)),
+                    filled=int(getattr(o, 'filled_count', 0)),
+                    remaining=int(getattr(o, 'remaining_count', 0)),
+                    created_time=str(getattr(o, 'created_time', "")),
+                ))
+            return orders
+        except Exception as e:
+            logger.error("Failed to get Kalshi orders: %s", e)
+            return []
     
     def create_order(
         self,
@@ -314,51 +275,46 @@ class KalshiClient:
         Returns:
             Created order
         """
-        if not self.is_authenticated:
+        if not self._sdk_client:
             raise RuntimeError("Kalshi trading requires authentication.")
         
         # Kalshi prices are in cents (1-99)
         price_cents = int(price * 100)
         
-        order_data = {
-            "ticker": ticker,
-            "action": action,
-            "side": side,
-            "count": size,
-            "type": order_type,
-        }
-        
-        if order_type == "limit":
-            if side == "yes":
-                order_data["yes_price"] = price_cents
-            else:
-                order_data["no_price"] = price_cents
-        
         logger.info("Kalshi order: %s %s %s x%d @ $%.2f", action, side, ticker, size, price)
         
-        data = self._auth_post("/portfolio/orders", order_data)
-        o = data.get("order", {})
+        response = self._sdk_client.create_order(
+            ticker=ticker,
+            action=action,
+            side=side,
+            count=size,
+            type=order_type,
+            yes_price=price_cents if side == "yes" else None,
+            no_price=price_cents if side == "no" else None,
+        )
+        
+        o = getattr(response, 'order', response)
         
         return KalshiOrder(
-            order_id=o.get("order_id", ""),
-            ticker=o.get("ticker", ticker),
-            side=o.get("side", side),
-            type=o.get("type", order_type),
-            status=o.get("status", "pending"),
+            order_id=getattr(o, 'order_id', ""),
+            ticker=getattr(o, 'ticker', ticker),
+            side=getattr(o, 'side', side),
+            type=getattr(o, 'type', order_type),
+            status=getattr(o, 'status', "pending"),
             price=price,
             size=size,
-            filled=int(o.get("filled_count", 0)),
-            remaining=int(o.get("remaining_count", size)),
-            created_time=o.get("created_time", ""),
+            filled=int(getattr(o, 'filled_count', 0)),
+            remaining=int(getattr(o, 'remaining_count', size)),
+            created_time=str(getattr(o, 'created_time', "")),
         )
     
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an order by ID."""
-        if not self.is_authenticated:
+        if not self._sdk_client:
             return False
         
         try:
-            self._auth_delete(f"/portfolio/orders/{order_id}")
+            self._sdk_client.cancel_order(order_id=order_id)
             logger.info("Kalshi order canceled: %s", order_id)
             return True
         except Exception as e:
@@ -367,7 +323,7 @@ class KalshiClient:
     
     def cancel_all_orders(self, ticker: str | None = None) -> int:
         """Cancel all resting orders, optionally filtered by ticker."""
-        if not self.is_authenticated:
+        if not self._sdk_client:
             return 0
         
         orders = self.get_orders(status="resting")
