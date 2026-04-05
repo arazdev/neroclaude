@@ -172,7 +172,7 @@ def get_settings():
 
 @app.post("/api/settings")
 def update_settings(settings: SettingsUpdate):
-    """Update bot settings in .env file."""
+    """Update bot settings in .env file and auto-restart services."""
     updates = {}
     if settings.dry_run is not None:
         updates["DRY_RUN"] = "true" if settings.dry_run else "false"
@@ -189,21 +189,46 @@ def update_settings(settings: SettingsUpdate):
 
     if updates:
         write_env(updates)
+        # Auto-restart services to apply new settings
+        try:
+            subprocess.run(
+                ["sudo", "systemctl", "restart", "botclaude"],
+                check=True,
+                capture_output=True,
+                timeout=10,
+            )
+            # Restart API service (Popen so we don't block on our own restart)
+            subprocess.Popen(
+                ["sudo", "systemctl", "restart", "botclaude-api"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return {"status": "ok", "updated": list(updates.keys()), "restarted": True}
+        except Exception as e:
+            # Settings saved but restart failed
+            return {"status": "partial", "updated": list(updates.keys()), "restarted": False, "error": str(e)}
 
-    return {"status": "ok", "updated": list(updates.keys())}
+    return {"status": "ok", "updated": [], "restarted": False}
 
 
 @app.post("/api/restart")
 def restart_bot():
-    """Restart the bot service (requires systemd)."""
+    """Restart both bot and API services to apply new settings."""
     try:
+        # Restart bot service
         subprocess.run(
-            ["sudo", "systemctl", "restart", "neroclaude"],
+            ["sudo", "systemctl", "restart", "botclaude"],
             check=True,
             capture_output=True,
             timeout=10,
         )
-        return {"status": "ok", "message": "Bot restarting..."}
+        # Restart API service (this will kill current process, systemd restarts it)
+        subprocess.Popen(
+            ["sudo", "systemctl", "restart", "botclaude-api"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return {"status": "ok", "message": "Bot and API restarting..."}
     except subprocess.CalledProcessError as e:
         return JSONResponse(
             status_code=500,
