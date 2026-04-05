@@ -38,6 +38,25 @@ interface KalshiOrderHistory {
   canceled: KalshiOrder[];
 }
 
+interface KalshiPosition {
+  ticker: string;
+  question: string;
+  side: string;
+  action: string;
+  price: number;
+  size_usdc: number;
+  shares: number;
+  confidence: number;
+  status: string;
+  opened_at: string;
+}
+
+interface KalshiPositions {
+  positions: KalshiPosition[];
+  count: number;
+  total_spent: number;
+}
+
 interface StrategyStats {
   open: number;
   exposure: number;
@@ -562,14 +581,20 @@ export default function Dashboard() {
 
   // Kalshi orders state
   const [kalshiOrders, setKalshiOrders] = useState<KalshiOrderHistory | null>(null);
+  const [kalshiPositions, setKalshiPositions] = useState<KalshiPositions | null>(null);
   const [showKalshiOrders, setShowKalshiOrders] = useState(false);
 
   const fetchKalshiOrders = async () => {
     try {
-      const data = await apiFetch<KalshiOrderHistory>("/api/kalshi/orders/history");
-      setKalshiOrders(data);
+      const [orders, positions] = await Promise.all([
+        apiFetch<KalshiOrderHistory>("/api/kalshi/orders/history"),
+        apiFetch<KalshiPositions>("/api/kalshi/positions"),
+      ]);
+      setKalshiOrders(orders);
+      setKalshiPositions(positions);
     } catch {
       setKalshiOrders({ resting: [], executed: [], canceled: [] });
+      setKalshiPositions({ positions: [], count: 0, total_spent: 0 });
     }
   };
 
@@ -861,13 +886,18 @@ export default function Dashboard() {
             borderRadius: 12,
             padding: "16px",
             marginBottom: 24,
-            maxHeight: 400,
+            maxHeight: 500,
             overflow: "auto",
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: "#ec4899" }}>
-              Kalshi Order History
+              Kalshi Orders & Positions
+              {kalshiPositions && (
+                <span style={{ marginLeft: 12, fontSize: 12, color: "#888" }}>
+                  Total: ${kalshiPositions.total_spent.toFixed(2)} in {kalshiPositions.count} positions
+                </span>
+              )}
             </span>
             <button
               onClick={fetchKalshiOrders}
@@ -884,6 +914,39 @@ export default function Dashboard() {
               Refresh
             </button>
           </div>
+
+          {/* Active Positions with prices */}
+          {kalshiPositions && kalshiPositions.positions.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#8b5cf6", marginBottom: 8 }}>
+                📊 Active Positions ({kalshiPositions.positions.filter(p => p.status === "OPEN").length})
+              </div>
+              {kalshiPositions.positions.filter(p => p.status === "OPEN").map((p, i) => (
+                <div
+                  key={i}
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: 11,
+                    color: "#a78bfa",
+                    padding: "6px 0",
+                    borderBottom: "1px solid #1a1a1a",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>
+                      {p.action} {p.side} <span style={{ color: "#ec4899" }}>{p.ticker}</span>
+                    </span>
+                    <span style={{ color: "#4ade80" }}>
+                      ${p.size_usdc.toFixed(2)} @ ${p.price.toFixed(2)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>
+                    {p.shares.toFixed(1)} contracts • {(p.confidence * 100).toFixed(0)}% conf
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           
           {/* Executed Orders */}
           <div style={{ marginBottom: 16 }}>
