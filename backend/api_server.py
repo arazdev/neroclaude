@@ -275,3 +275,178 @@ def get_orders():
             status_code=500,
             content={"error": f"Failed to fetch orders: {str(e)}"},
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Kalshi API
+# ─────────────────────────────────────────────────────────────────────────────
+
+_kalshi_client = None
+
+
+def get_kalshi_client():
+    global _kalshi_client
+    if _kalshi_client is None:
+        try:
+            from kalshi_client import KalshiClient
+            _kalshi_client = KalshiClient()
+        except Exception:
+            return None
+    return _kalshi_client
+
+
+class KalshiOrderRequest(BaseModel):
+    ticker: str
+    side: str  # "yes" or "no"
+    action: str  # "buy" or "sell"
+    size: int
+    price: float
+
+
+@app.get("/api/kalshi/status")
+def get_kalshi_status():
+    """Check Kalshi connection and authentication status."""
+    client = get_kalshi_client()
+    if not client:
+        return {"connected": False, "authenticated": False, "error": "Client not available"}
+    
+    try:
+        # Test public endpoint
+        markets = client.get_markets(limit=1)
+        is_authenticated = client.is_authenticated
+        
+        # Test auth if available
+        balance = None
+        if is_authenticated:
+            try:
+                balance = client.get_balance()
+            except Exception as e:
+                is_authenticated = False
+        
+        return {
+            "connected": True,
+            "authenticated": is_authenticated,
+            "balance": balance,
+            "market_count": len(markets),
+        }
+    except Exception as e:
+        return {"connected": False, "authenticated": False, "error": str(e)}
+
+
+@app.get("/api/kalshi/balance")
+def get_kalshi_balance():
+    """Get Kalshi account balance."""
+    client = get_kalshi_client()
+    if not client or not client.is_authenticated:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Kalshi not authenticated. Check KALSHI_API_KEY and KALSHI_PRIVATE_KEY_FILE."},
+        )
+    try:
+        balance = client.get_balance()
+        return balance
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/kalshi/positions")
+def get_kalshi_positions():
+    """Get Kalshi positions."""
+    client = get_kalshi_client()
+    if not client or not client.is_authenticated:
+        return {"positions": [], "error": "Not authenticated"}
+    try:
+        positions = client.get_positions()
+        return {"positions": [p.__dict__ for p in positions], "count": len(positions)}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/kalshi/orders")
+def get_kalshi_orders():
+    """Get Kalshi open orders."""
+    client = get_kalshi_client()
+    if not client or not client.is_authenticated:
+        return {"orders": [], "error": "Not authenticated"}
+    try:
+        orders = client.get_orders(status="resting")
+        return {"orders": [o.__dict__ for o in orders], "count": len(orders)}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/kalshi/markets")
+def get_kalshi_markets(limit: int = 20):
+    """Get active Kalshi markets."""
+    client = get_kalshi_client()
+    if not client:
+        return {"markets": [], "error": "Client not available"}
+    try:
+        markets = client.get_active_markets(limit=limit)
+        return {"markets": [m.__dict__ for m in markets], "count": len(markets)}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/kalshi/order")
+def create_kalshi_order(order: KalshiOrderRequest):
+    """Create a new order on Kalshi."""
+    client = get_kalshi_client()
+    if not client or not client.is_authenticated:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Kalshi not authenticated"},
+        )
+    
+    # Validate inputs
+    if order.side not in ("yes", "no"):
+        return JSONResponse(status_code=400, content={"error": "side must be 'yes' or 'no'"})
+    if order.action not in ("buy", "sell"):
+        return JSONResponse(status_code=400, content={"error": "action must be 'buy' or 'sell'"})
+    if order.size < 1:
+        return JSONResponse(status_code=400, content={"error": "size must be at least 1"})
+    if not (0.01 <= order.price <= 0.99):
+        return JSONResponse(status_code=400, content={"error": "price must be between 0.01 and 0.99"})
+    
+    # Check dry run
+    env = read_env()
+    if env.get("DRY_RUN", "true").lower() == "true":
+        return {
+            "status": "dry_run",
+            "order": {
+                "ticker": order.ticker,
+                "side": order.side,
+                "action": order.action,
+                "size": order.size,
+                "price": order.price,
+            },
+            "message": "DRY_RUN enabled - order not placed",
+        }
+    
+    try:
+        result = client.create_order(
+            ticker=order.ticker,
+            side=order.side,
+            action=order.action,
+            size=order.size,
+            price=order.price,
+        )
+        return {"status": "ok", "order": result.__dict__}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.delete("/api/kalshi/order/{order_id}")
+def cancel_kalshi_order(order_id: str):
+    """Cancel a Kalshi order."""
+    client = get_kalshi_client()
+    if not client or not client.is_authenticated:
+        return JSONResponse(status_code=400, content={"error": "Kalshi not authenticated"})
+    
+    try:
+        success = client.cancel_order(order_id)
+        if success:
+            return {"status": "ok", "canceled": order_id}
+        return JSONResponse(status_code=400, content={"error": "Failed to cancel order"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
