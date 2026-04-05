@@ -23,6 +23,21 @@ interface Position {
   pnl: number | null;
 }
 
+interface KalshiOrder {
+  order_id: string;
+  ticker: string;
+  side: string;
+  action: string;
+  status: string;
+  created_time: string;
+}
+
+interface KalshiOrderHistory {
+  resting: KalshiOrder[];
+  executed: KalshiOrder[];
+  canceled: KalshiOrder[];
+}
+
 interface StrategyStats {
   open: number;
   exposure: number;
@@ -545,6 +560,19 @@ export default function Dashboard() {
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
 
+  // Kalshi orders state
+  const [kalshiOrders, setKalshiOrders] = useState<KalshiOrderHistory | null>(null);
+  const [showKalshiOrders, setShowKalshiOrders] = useState(false);
+
+  const fetchKalshiOrders = async () => {
+    try {
+      const data = await apiFetch<KalshiOrderHistory>("/api/kalshi/orders/history");
+      setKalshiOrders(data);
+    } catch {
+      setKalshiOrders({ resting: [], executed: [], canceled: [] });
+    }
+  };
+
   const fetchLogs = async () => {
     try {
       const data = await apiFetch<{ logs: string[]; total: number }>("/api/logs?lines=30");
@@ -566,6 +594,7 @@ export default function Dashboard() {
       setOpenPos(positions.open);
       setClosedPos(positions.closed);
       if (w) setWallet(w);
+      await fetchKalshiOrders();
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (e: unknown) {
       const err = e as Error;
@@ -698,6 +727,20 @@ export default function Dashboard() {
             Logs
           </button>
           <button
+            onClick={() => { fetchKalshiOrders(); setShowKalshiOrders(!showKalshiOrders); }}
+            style={{
+              background: showKalshiOrders ? "#ec4899" : "#333",
+              color: "#fff",
+              border: "1px solid #444",
+              borderRadius: 8,
+              padding: "8px 16px",
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Kalshi Orders
+          </button>
+          <button
             onClick={loadSettings}
             style={{
               background: "#333",
@@ -804,6 +847,119 @@ export default function Dashboard() {
                   {line}
                 </div>
               ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Kalshi Orders Panel */}
+      {showKalshiOrders && kalshiOrders && (
+        <div
+          style={{
+            background: "#0a0a0f",
+            border: "1px solid #ec4899",
+            borderRadius: 12,
+            padding: "16px",
+            marginBottom: 24,
+            maxHeight: 400,
+            overflow: "auto",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#ec4899" }}>
+              Kalshi Order History
+            </span>
+            <button
+              onClick={fetchKalshiOrders}
+              style={{
+                background: "#222",
+                color: "#888",
+                border: "1px solid #333",
+                borderRadius: 4,
+                padding: "4px 8px",
+                cursor: "pointer",
+                fontSize: 11,
+              }}
+            >
+              Refresh
+            </button>
+          </div>
+          
+          {/* Executed Orders */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#4ade80", marginBottom: 8 }}>
+              ✓ Executed ({kalshiOrders.executed.length})
+            </div>
+            {kalshiOrders.executed.slice(0, 10).map((o, i) => (
+              <div
+                key={i}
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  color: "#4ade80",
+                  padding: "4px 0",
+                  borderBottom: "1px solid #1a1a1a",
+                }}
+              >
+                {o.action.toUpperCase()} {o.side.toUpperCase()} {o.ticker}
+                <span style={{ color: "#555", marginLeft: 8 }}>
+                  {new Date(o.created_time).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+            {kalshiOrders.executed.length === 0 && (
+              <div style={{ fontSize: 11, color: "#555" }}>No executed orders</div>
+            )}
+          </div>
+
+          {/* Resting Orders */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#facc15", marginBottom: 8 }}>
+              ⏳ Resting ({kalshiOrders.resting.length})
+            </div>
+            {kalshiOrders.resting.slice(0, 10).map((o, i) => (
+              <div
+                key={i}
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  color: "#facc15",
+                  padding: "4px 0",
+                  borderBottom: "1px solid #1a1a1a",
+                }}
+              >
+                {o.action.toUpperCase()} {o.side.toUpperCase()} {o.ticker}
+              </div>
+            ))}
+            {kalshiOrders.resting.length === 0 && (
+              <div style={{ fontSize: 11, color: "#555" }}>No resting orders</div>
+            )}
+          </div>
+
+          {/* Canceled Orders */}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#f87171", marginBottom: 8 }}>
+              ✗ Canceled ({kalshiOrders.canceled.length})
+            </div>
+            {kalshiOrders.canceled.slice(0, 10).map((o, i) => (
+              <div
+                key={i}
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  color: "#f87171",
+                  padding: "4px 0",
+                  borderBottom: "1px solid #1a1a1a",
+                }}
+              >
+                {o.action.toUpperCase()} {o.side.toUpperCase()} {o.ticker}
+                <span style={{ color: "#555", marginLeft: 8 }}>
+                  {new Date(o.created_time).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+            {kalshiOrders.canceled.length === 0 && (
+              <div style={{ fontSize: 11, color: "#555" }}>No canceled orders</div>
             )}
           </div>
         </div>
