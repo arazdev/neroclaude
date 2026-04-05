@@ -298,11 +298,12 @@ def main() -> None:
                     if n:
                         logger.info("Kalshi market maker posted %d quotes", n)
 
-                # ── Slower strategies (run at poll_interval) ─────
-                arb_counter += 1
-                full_cycle = arb_counter >= max(1, cfg.poll_interval // max(cfg.arb_scan_interval, 1))
-
-                if full_cycle:
+                # ── Claude/Cross strategies ─────
+                # In 'claude' mode, always run every poll interval
+                # In 'arb/mm' modes, run less frequently
+                run_claude_now = mode in ("claude", "all") or (arb_counter >= max(1, cfg.poll_interval // max(cfg.arb_scan_interval, 1)))
+                
+                if run_claude_now:
                     arb_counter = 0
 
                     if cross:
@@ -316,11 +317,13 @@ def main() -> None:
                             run_cycle(poly, engine, risk, tracker, cfg)
                         if kalshi:
                             run_kalshi_cycle(kalshi, engine, tracker, cfg)
+                else:
+                    arb_counter += 1
 
                 # Log position summary
                 tracker.log_summary()
 
-                backoff = cfg.arb_scan_interval if (arb or mm) else cfg.poll_interval
+                backoff = cfg.arb_scan_interval if (arb or mm or kalshi_mm) else cfg.poll_interval
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
