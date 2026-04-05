@@ -93,6 +93,7 @@ interface Settings {
   max_order_usdc: number;
   max_position_usdc: number;
   poll_interval: number;
+  max_days_to_expiration: number;
 }
 
 interface Wallet {
@@ -152,16 +153,17 @@ function StatCard({
     <div
       style={{
         background: "#141420",
-        borderRadius: 12,
-        padding: "20px 24px",
+        borderRadius: 10,
+        padding: "12px 16px",
         border: "1px solid #222",
-        minWidth: 160,
+        minWidth: 100,
+        flex: "1 1 100px",
       }}
     >
-      <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>
         {label}
       </div>
-      <div style={{ fontSize: 24, fontWeight: 700, color: color || "#fff" }}>
+      <div style={{ fontSize: 18, fontWeight: 700, color: color || "#fff" }}>
         {value}
       </div>
     </div>
@@ -321,14 +323,16 @@ function SettingsPanel({
         style={{
           background: "#1a1a2e",
           borderRadius: 16,
-          padding: 28,
-          width: 400,
-          maxWidth: "90vw",
+          padding: 20,
+          width: 380,
+          maxWidth: "92vw",
+          maxHeight: "90vh",
+          overflowY: "auto",
           border: "1px solid #333",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ margin: "0 0 20px", fontSize: 20 }}>Settings</h2>
+        <h2 style={{ margin: "0 0 16px", fontSize: 18 }}>Settings</h2>
 
         {/* DRY RUN toggle */}
         <div style={{ marginBottom: 20 }}>
@@ -493,7 +497,7 @@ function SettingsPanel({
         </div>
 
         {/* POLL INTERVAL */}
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 20 }}>
           <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
             Poll Interval (seconds)
           </label>
@@ -513,6 +517,34 @@ function SettingsPanel({
               fontSize: 14,
             }}
           />
+        </div>
+
+        {/* MAX DAYS TO EXPIRATION */}
+        <div style={{ marginBottom: 24 }}>
+          <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+            Max Days to Expiration
+          </label>
+          <input
+            type="number"
+            min="1"
+            max="365"
+            value={local.max_days_to_expiration}
+            onChange={(e) =>
+              setLocal({ ...local, max_days_to_expiration: Number(e.target.value) })
+            }
+            style={{
+              width: "100%",
+              background: "#0d0d15",
+              color: "#fff",
+              border: "1px solid #333",
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 14,
+            }}
+          />
+          <span style={{ fontSize: 12, color: "#666", marginTop: 4, display: "block" }}>
+            1 = same-day trades • 5 = weekly • 30 = monthly
+          </span>
         </div>
 
         {/* Buttons */}
@@ -975,7 +1007,7 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 20px" }}>
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: "20px 12px" }}>
       {/* Settings Modal */}
       {showSettings && settings && (
         <SettingsPanel
@@ -1001,13 +1033,14 @@ export default function Dashboard() {
       <div
         style={{
           display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 32,
+          flexDirection: "column",
+          gap: 12,
+          marginBottom: 24,
         }}
       >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 28, letterSpacing: -1 }}>
+          <h1 style={{ margin: 0, fontSize: 24, letterSpacing: -1 }}>
             NEROCLAUDE
           </h1>
           <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
@@ -1043,7 +1076,7 @@ export default function Dashboard() {
             )}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <button
             onClick={() => { fetchLogs(); setShowLogs(!showLogs); }}
             style={{
@@ -1051,9 +1084,9 @@ export default function Dashboard() {
               color: "#fff",
               border: "1px solid #444",
               borderRadius: 8,
-              padding: "8px 16px",
+              padding: "6px 12px",
               cursor: "pointer",
-              fontSize: 13,
+              fontSize: 12,
             }}
           >
             Logs
@@ -1065,12 +1098,12 @@ export default function Dashboard() {
               color: "#fff",
               border: "1px solid #444",
               borderRadius: 8,
-              padding: "8px 16px",
+              padding: "6px 12px",
               cursor: "pointer",
-              fontSize: 13,
+              fontSize: 12,
             }}
           >
-            Kalshi Orders
+            Kalshi
           </button>
           <button
             onClick={loadSettings}
@@ -1079,9 +1112,9 @@ export default function Dashboard() {
               color: "#fff",
               border: "1px solid #444",
               borderRadius: 8,
-              padding: "8px 16px",
+              padding: "6px 12px",
               cursor: "pointer",
-              fontSize: 13,
+              fontSize: 12,
             }}
           >
             Settings
@@ -1093,13 +1126,14 @@ export default function Dashboard() {
               color: "#fff",
               border: "1px solid #333",
               borderRadius: 8,
-              padding: "8px 16px",
+              padding: "6px 12px",
               cursor: "pointer",
-              fontSize: 13,
+              fontSize: 12,
             }}
           >
             Refresh
           </button>
+        </div>
         </div>
       </div>
 
@@ -1370,45 +1404,45 @@ export default function Dashboard() {
             border: "1px solid #333",
           }}
         >
-          <div style={{ display: "flex", gap: 48, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
             {/* Polymarket */}
-            <div>
-              <div style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>POLYMARKET US</div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: "#a78bfa" }}>
+            <div style={{ minWidth: 140 }}>
+              <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>POLYMARKET US</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: "#a78bfa" }}>
                 ${wallet.polymarket.balance.toFixed(2)}
               </div>
-              <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Available USDC</div>
-              <div style={{ fontSize: 16, color: "#60a5fa", marginBottom: 12 }}>
-                ${wallet.polymarket.positions_value.toFixed(2)} <span style={{ fontSize: 12, color: "#666" }}>in positions</span>
+              <div style={{ fontSize: 11, color: "#666", marginBottom: 6 }}>Available USDC</div>
+              <div style={{ fontSize: 14, color: "#60a5fa", marginBottom: 10 }}>
+                ${wallet.polymarket.positions_value.toFixed(2)} <span style={{ fontSize: 11, color: "#666" }}>positions</span>
               </div>
               <button
                 onClick={() => setShowDeposit("polymarket")}
                 style={{
                   background: "#8b5cf6",
                   color: "#fff",
-                  padding: "8px 16px",
+                  padding: "6px 12px",
                   borderRadius: 8,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: 600,
                   border: "none",
                   cursor: "pointer",
                 }}
               >
-                + Deposit / Withdraw
+                + Deposit
               </button>
             </div>
             {/* Kalshi */}
-            <div>
-              <div style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>KALSHI</div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: "#f472b6" }}>
+            <div style={{ minWidth: 140 }}>
+              <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>KALSHI</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: "#f472b6" }}>
                 ${wallet.kalshi.balance.toFixed(2)}
               </div>
-              <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Cash Balance</div>
-              <div style={{ fontSize: 16, color: "#60a5fa", marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: "#666", marginBottom: 6 }}>Cash Balance</div>
+              <div style={{ fontSize: 14, color: "#60a5fa", marginBottom: 10 }}>
                 {kalshiPositions ? (
-                  <>{kalshiPositions.positions_count} <span style={{ fontSize: 12, color: "#666" }}>open positions</span></>
+                  <>{kalshiPositions.positions_count} <span style={{ fontSize: 11, color: "#666" }}>positions</span></>
                 ) : (
-                  <span style={{ fontSize: 12, color: "#666" }}>Loading...</span>
+                  <span style={{ fontSize: 11, color: "#666" }}>Loading...</span>
                 )}
               </div>
               <button
@@ -1416,7 +1450,7 @@ export default function Dashboard() {
                 style={{
                   background: "#ec4899",
                   color: "#fff",
-                  padding: "8px 16px",
+                  padding: "6px 12px",
                   borderRadius: 8,
                   fontSize: 12,
                   fontWeight: 600,
@@ -1457,8 +1491,8 @@ export default function Dashboard() {
             display: "flex",
             flexWrap: "wrap",
             justifyContent: "center",
-            gap: 12,
-            marginBottom: 20,
+            gap: 8,
+            marginBottom: 16,
           }}
         >
           <StatCard label="Open Positions" value={String(summary.open_count)} />
@@ -1488,9 +1522,9 @@ export default function Dashboard() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            gap: 10,
-            marginBottom: 32,
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+            gap: 8,
+            marginBottom: 24,
           }}
         >
           {[

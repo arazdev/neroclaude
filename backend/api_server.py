@@ -52,6 +52,7 @@ class SettingsUpdate(BaseModel):
     max_order_usdc: float | None = None
     max_position_usdc: float | None = None
     poll_interval: int | None = None
+    max_days_to_expiration: int | None = None  # 1=same-day, 5=weekly, 30=monthly
 
 # Deposit/withdrawal models
 class DepositRequest(BaseModel):
@@ -221,6 +222,7 @@ def get_settings():
         "max_order_usdc": float(env.get("MAX_ORDER_USDC", "25.0")),
         "max_position_usdc": float(env.get("MAX_POSITION_USDC", "100.0")),
         "poll_interval": int(env.get("POLL_INTERVAL_SECONDS", "300")),
+        "max_days_to_expiration": int(env.get("MAX_DAYS_TO_EXPIRATION", "30")),
     }
 
 
@@ -248,6 +250,10 @@ def update_settings(settings: SettingsUpdate):
         updates["MAX_POSITION_USDC"] = str(settings.max_position_usdc)
     if settings.poll_interval is not None:
         updates["POLL_INTERVAL_SECONDS"] = str(settings.poll_interval)
+    if settings.max_days_to_expiration is not None:
+        if settings.max_days_to_expiration < 1 or settings.max_days_to_expiration > 365:
+            return JSONResponse(status_code=400, content={"error": "max_days_to_expiration must be 1-365"})
+        updates["MAX_DAYS_TO_EXPIRATION"] = str(settings.max_days_to_expiration)
 
     if updates:
         write_env(updates)
