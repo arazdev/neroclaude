@@ -15,7 +15,6 @@ from pydantic import BaseModel
 
 from config import Config
 from position_tracker import PositionTracker
-from polymarket_client import PolymarketClient
 from polymarket_us_client import PolymarketUSClient, get_polymarket_us_client
 
 cfg = Config()

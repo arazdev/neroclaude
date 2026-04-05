@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from claude_engine import TradeDecision
 from config import Config
-from polymarket_client import MarketSnapshot, PolymarketClient
+from models import MarketSnapshot
 from position_tracker import PositionTracker
 
 logger = logging.getLogger(__name__)

@@ -16,7 +16,7 @@ from typing import Any
 
 from config import Config
 from kalshi_client import KalshiClient, KalshiMarket
-from polymarket_client import MarketSnapshot, PolymarketClient
+from models import MarketSnapshot
 from position_tracker import PositionTracker
 
 logger = logging.getLogger("cross_arb")

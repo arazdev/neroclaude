@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from config import Config
-from polymarket_client import MarketSnapshot, PolymarketClient
+from models import MarketSnapshot
 from position_tracker import PositionTracker
 
 logger = logging.getLogger("market_maker")

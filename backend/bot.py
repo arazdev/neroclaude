@@ -19,7 +19,7 @@ from typing import Any
 
 from claude_engine import ClaudeEngine, TradeDecision
 from config import Config
-from polymarket_client import MarketSnapshot, PolymarketClient
+from models import MarketSnapshot
 from position_tracker import PositionTracker
 from risk_manager import RiskManager
 
@@ -137,7 +137,7 @@ def run_kalshi_cycle(
                     snap["question"][:60], snap["yes_price"], snap["spread"])
         
         # Create a simple snapshot object for Claude
-        from polymarket_client import MarketSnapshot
+        from models import MarketSnapshot
         market_snap = MarketSnapshot(
             condition_id=snap["ticker"],
             question=snap["question"],

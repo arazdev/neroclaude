@@ -10,7 +10,7 @@ import anthropic
 from pydantic import BaseModel, Field
 
 from config import Config
-from polymarket_client import MarketSnapshot
+from models import MarketSnapshot
 
 logger = logging.getLogger(__name__)
 
