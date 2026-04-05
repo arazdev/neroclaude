@@ -38,23 +38,27 @@ interface KalshiOrderHistory {
   canceled: KalshiOrder[];
 }
 
-interface KalshiPosition {
+interface KalshiFill {
   ticker: string;
-  question: string;
   side: string;
   action: string;
-  price: number;
-  size_usdc: number;
-  shares: number;
-  confidence: number;
-  status: string;
-  opened_at: string;
+  created_time: string | null;
+}
+
+interface KalshiPosition {
+  ticker: string;
+  side: string;
+  action: string;
+  fills: number;
 }
 
 interface KalshiPositions {
   positions: KalshiPosition[];
-  count: number;
-  total_spent: number;
+  positions_count: number;
+  fills: KalshiFill[];
+  fills_count: number;
+  cash: number;
+  note: string;
 }
 
 interface StrategyStats {
@@ -100,6 +104,7 @@ interface Wallet {
   kalshi: {
     balance: number;
     available: number;
+    positions_value?: number;
   };
   combined: {
     total_balance: number;
@@ -594,7 +599,7 @@ export default function Dashboard() {
       setKalshiPositions(positions);
     } catch {
       setKalshiOrders({ resting: [], executed: [], canceled: [] });
-      setKalshiPositions({ positions: [], count: 0, total_spent: 0 });
+      setKalshiPositions({ positions: [], positions_count: 0, fills: [], fills_count: 0, cash: 0, note: "" });
     }
   };
 
@@ -892,10 +897,10 @@ export default function Dashboard() {
         >
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: "#ec4899" }}>
-              Kalshi Orders & Positions
+              Kalshi Portfolio
               {kalshiPositions && (
-                <span style={{ marginLeft: 12, fontSize: 12, color: "#888" }}>
-                  Total: ${kalshiPositions.total_spent.toFixed(2)} in {kalshiPositions.count} positions
+                <span style={{ marginLeft: 12, fontSize: 12, color: "#4ade80" }}>
+                  ${kalshiPositions.cash?.toFixed(2) || "0.00"} cash • {kalshiPositions.positions_count} positions • {kalshiPositions.fills_count} fills
                 </span>
               )}
             </span>
@@ -915,13 +920,40 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* Active Positions with prices */}
+          {/* Active Positions from exchange */}
           {kalshiPositions && kalshiPositions.positions.length > 0 && (
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#8b5cf6", marginBottom: 8 }}>
-                📊 Active Positions ({kalshiPositions.positions.filter(p => p.status === "OPEN").length})
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#4ade80", marginBottom: 8 }}>
+                📊 Open Positions ({kalshiPositions.positions_count})
               </div>
-              {kalshiPositions.positions.filter(p => p.status === "OPEN").map((p, i) => (
+              {kalshiPositions.positions.map((p, i) => (
+                <div
+                  key={i}
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: 11,
+                    color: "#4ade80",
+                    padding: "6px 0",
+                    borderBottom: "1px solid #1a1a1a",
+                  }}
+                >
+                  <span style={{ color: p.side === "yes" ? "#4ade80" : "#f87171" }}>
+                    {p.action.toUpperCase()} {p.side.toUpperCase()}
+                  </span>{" "}
+                  <span style={{ color: "#ec4899" }}>{p.ticker}</span>
+                  <span style={{ color: "#888", marginLeft: 8 }}>({p.fills} fills)</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Trade History */}
+          {kalshiPositions && kalshiPositions.fills.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#8b5cf6", marginBottom: 8 }}>
+                📜 Trade History ({kalshiPositions.fills_count})
+              </div>
+              {kalshiPositions.fills.map((f, i) => (
                 <div
                   key={i}
                   style={{
@@ -934,14 +966,11 @@ export default function Dashboard() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>
-                      {p.action} {p.side} <span style={{ color: "#ec4899" }}>{p.ticker}</span>
+                      {f.action.toUpperCase()} {f.side.toUpperCase()} <span style={{ color: "#ec4899" }}>{f.ticker}</span>
                     </span>
-                    <span style={{ color: "#4ade80" }}>
-                      ${p.size_usdc.toFixed(2)} @ ${p.price.toFixed(2)}
+                    <span style={{ color: "#888" }}>
+                      {f.created_time ? new Date(f.created_time).toLocaleString() : ""}
                     </span>
-                  </div>
-                  <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>
-                    {p.shares.toFixed(1)} contracts • {(p.confidence * 100).toFixed(0)}% conf
                   </div>
                 </div>
               ))}
@@ -1057,9 +1086,13 @@ export default function Dashboard() {
               <div style={{ fontSize: 28, fontWeight: 700, color: "#f472b6" }}>
                 ${wallet.kalshi.balance.toFixed(2)}
               </div>
-              <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Balance</div>
+              <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Cash Balance</div>
               <div style={{ fontSize: 16, color: "#60a5fa" }}>
-                ${wallet.kalshi.available.toFixed(2)} <span style={{ fontSize: 12, color: "#666" }}>available</span>
+                {kalshiPositions ? (
+                  <>{kalshiPositions.positions_count} <span style={{ fontSize: 12, color: "#666" }}>open positions</span></>
+                ) : (
+                  <span style={{ fontSize: 12, color: "#666" }}>Loading...</span>
+                )}
               </div>
             </div>
             {/* Combined */}
@@ -1068,7 +1101,7 @@ export default function Dashboard() {
               <div style={{ fontSize: 28, fontWeight: 700, color: "#4ade80" }}>
                 ${wallet.combined.total_portfolio.toFixed(2)}
               </div>
-              <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Total Portfolio</div>
+              <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>Cash + Poly Positions</div>
               <div
                 style={{
                   fontSize: 16,
@@ -1076,6 +1109,9 @@ export default function Dashboard() {
                 }}
               >
                 {wallet.realized_pnl >= 0 ? "+" : ""}${wallet.realized_pnl.toFixed(2)} <span style={{ fontSize: 12, color: "#666" }}>realized P&L</span>
+              </div>
+              <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>
+                *Kalshi positions value not included
               </div>
             </div>
           </div>
