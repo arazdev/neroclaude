@@ -159,14 +159,14 @@ class PolymarketUSClient:
             intent = "ORDER_INTENT_BUY_LONG" if side.lower() == "yes" else "ORDER_INTENT_BUY_SHORT"
             order_type_api = "ORDER_TYPE_LIMIT" if order_type == "limit" else "ORDER_TYPE_MARKET"
             
-            order = self._client.orders.create(
-                market_slug=market_slug,
-                intent=intent,
-                type=order_type_api,
-                price={"value": str(price), "currency": "USD"},
-                quantity=quantity,
-                tif="TIME_IN_FORCE_GOOD_TILL_CANCEL",
-            )
+            order = self._client.orders.create({
+                "marketSlug": market_slug,
+                "intent": intent,
+                "type": order_type_api,
+                "price": {"value": str(price), "currency": "USD"},
+                "quantity": quantity,
+                "tif": "TIME_IN_FORCE_GOOD_TILL_CANCEL",
+            })
             
             return {
                 "order_id": getattr(order, "id", ""),
@@ -203,10 +203,10 @@ class PolymarketUSClient:
 
     # ==================== PAYMENT / DEPOSIT METHODS ====================
     
-    def _api_request(self, method: str, endpoint: str, data: dict = None) -> dict:
+    def _api_request(self, method: str, endpoint: str, data: Optional[dict] = None) -> dict:
         """Make authenticated API request."""
         if not self._client:
-            raise AuthenticationError("Not authenticated")
+            raise ValueError("Not authenticated")
         
         url = f"{POLY_US_API_BASE}{endpoint}"
         headers = {
