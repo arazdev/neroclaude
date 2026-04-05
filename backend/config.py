@@ -20,15 +20,20 @@ class Config:
     # Anthropic
     anthropic_api_key: str = _env("ANTHROPIC_API_KEY")
 
-    # Polymarket
-    poly_host: str = _env("POLYMARKET_HOST", "https://clob.polymarket.com")
+    # Polymarket (International - not available in US)
+    poly_host: str = _env("POLYMARKET_HOST", "https://clob.polymarket.com", required=False)
     poly_chain_id: int = int(_env("POLYMARKET_CHAIN_ID", "137"))
-    poly_private_key: str = _env("POLYMARKET_PRIVATE_KEY")
+    poly_private_key: str = _env("POLYMARKET_PRIVATE_KEY", "", required=False)
     poly_funder: str = _env("POLYMARKET_FUNDER", "", required=False)
     poly_signature_type: int = int(_env("POLYMARKET_SIGNATURE_TYPE", "0"))
     poly_api_key: str = _env("POLYMARKET_API_KEY", "", required=False)
     poly_api_secret: str = _env("POLYMARKET_API_SECRET", "", required=False)
     poly_passphrase: str = _env("POLYMARKET_PASSPHRASE", "", required=False)
+
+    # Polymarket US (for US residents)
+    poly_us_key_id: str = _env("POLYMARKET_US_KEY_ID", "", required=False)
+    poly_us_secret: str = _env("POLYMARKET_US_SECRET", "", required=False)
+    poly_us_enabled: bool = _env("POLY_US_ENABLED", "false", required=False).lower() == "true"
 
     # Risk
     max_position_usdc: float = float(_env("MAX_POSITION_USDC", "100.0"))

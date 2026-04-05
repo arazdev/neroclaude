@@ -6,6 +6,7 @@ import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,9 +16,19 @@ from pydantic import BaseModel
 from config import Config
 from position_tracker import PositionTracker
 from polymarket_client import PolymarketClient
+from polymarket_us_client import PolymarketUSClient, get_polymarket_us_client
 
 cfg = Config()
 tracker = PositionTracker()
+
+# Polymarket US client (singleton)
+_poly_us_client: Optional[PolymarketUSClient] = None
+
+def get_poly_us_client() -> Optional[PolymarketUSClient]:
+    global _poly_us_client
+    if _poly_us_client is None:
+        _poly_us_client = get_polymarket_us_client(cfg)
+    return _poly_us_client
 
 app = FastAPI(title="NEROCLAUDE API", version="1.0.0")
 
@@ -42,6 +53,15 @@ class SettingsUpdate(BaseModel):
     max_order_usdc: float | None = None
     max_position_usdc: float | None = None
     poll_interval: int | None = None
+
+# Deposit/withdrawal models
+class DepositRequest(BaseModel):
+    payment_method_id: str
+    amount: float
+
+class MFARequest(BaseModel):
+    session_id: str
+    code: str
 
 # Valid Claude models
 CLAUDE_MODELS = [
@@ -540,3 +560,112 @@ def cancel_kalshi_order(order_id: str):
         return JSONResponse(status_code=400, content={"error": "Failed to cancel order"})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+# ===================== POLYMARKET US PAYMENT ENDPOINTS =====================
+
+@app.get("/api/polymarket-us/status")
+def get_poly_us_status():
+    """Check Polymarket US authentication status."""
+    client = get_poly_us_client()
+    return {
+        "authenticated": client.is_authenticated if client else False,
+        "platform": "polymarket_us",
+    }
+
+
+@app.get("/api/polymarket-us/payment-methods")
+def get_poly_us_payment_methods():
+    """Get linked payment methods (banks/cards)."""
+    client = get_poly_us_client()
+    if not client or not client.is_authenticated:
+        return {"methods": [], "error": "Not authenticated"}
+    
+    try:
+        methods = client.get_payment_methods()
+        return {
+            "methods": [
+                {
+                    "id": m.id,
+                    "type": m.type,
+                    "name": m.name,
+                    "last4": m.last4,
+                    "deposit_limit": m.deposit_limit,
+                    "withdrawal_limit": m.withdrawal_limit,
+                }
+                for m in methods
+            ]
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/polymarket-us/link-bank")
+def link_bank_account():
+    """Start bank linking process."""
+    client = get_poly_us_client()
+    if not client or not client.is_authenticated:
+        return JSONResponse(status_code=400, content={"error": "Not authenticated"})
+    
+    result = client.initialize_bank_link()
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.post("/api/polymarket-us/validate-mfa")
+def validate_mfa(req: MFARequest):
+    """Submit MFA code for bank linking."""
+    client = get_poly_us_client()
+    if not client or not client.is_authenticated:
+        return JSONResponse(status_code=400, content={"error": "Not authenticated"})
+    
+    result = client.validate_mfa(req.session_id, req.code)
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.post("/api/polymarket-us/deposit")
+def create_deposit(req: DepositRequest):
+    """Create ACH deposit from linked bank."""
+    client = get_poly_us_client()
+    if not client or not client.is_authenticated:
+        return JSONResponse(status_code=400, content={"error": "Not authenticated"})
+    
+    if req.amount < 1:
+        return JSONResponse(status_code=400, content={"error": "Minimum deposit is $1"})
+    if req.amount > 10000:
+        return JSONResponse(status_code=400, content={"error": "Maximum deposit is $10,000"})
+    
+    result = client.deposit_ach(req.payment_method_id, req.amount)
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.post("/api/polymarket-us/withdraw")
+def create_withdrawal(req: DepositRequest):
+    """Create ACH withdrawal to linked bank."""
+    client = get_poly_us_client()
+    if not client or not client.is_authenticated:
+        return JSONResponse(status_code=400, content={"error": "Not authenticated"})
+    
+    if req.amount < 1:
+        return JSONResponse(status_code=400, content={"error": "Minimum withdrawal is $1"})
+    
+    result = client.withdraw_ach(req.payment_method_id, req.amount)
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.get("/api/polymarket-us/balance")
+def get_poly_us_balance():
+    """Get Polymarket US account balance."""
+    client = get_poly_us_client()
+    if not client or not client.is_authenticated:
+        return {"usd": 0, "available": 0, "authenticated": False}
+    
+    balance = client.get_balance()
+    return {**balance, "authenticated": True}
