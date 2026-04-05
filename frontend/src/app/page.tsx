@@ -928,6 +928,49 @@ export default function Dashboard() {
     }
   };
 
+  // Parse raw log line into readable format
+  const formatLogLine = (line: string): { time: string; level: string; message: string; icon: string } => {
+    // Pattern: "Apr 05 22:47:46 neroclaude python[144630]: 2026-04-05 15:47:46,736 module_name LEVEL message"
+    const match = line.match(/^(\w+ \d+ \d+:\d+:\d+).*?\d{4}-\d{2}-\d{2} \d+:\d+:\d+,\d+ (\w+) (INFO|WARNING|ERROR|DEBUG)\s+(.*)$/);
+    
+    if (match) {
+      const [, rawTime, module, level, msg] = match;
+      const time = rawTime.replace(/^\w+ \d+ /, ""); // Just "22:47:46"
+      
+      // Choose icon based on module/message
+      let icon = "📋";
+      if (module === "bot" && msg.includes("started")) icon = "🚀";
+      else if (module === "bot" && msg.includes("Cycle")) icon = "🔄";
+      else if (module === "kalshi") icon = "📊";
+      else if (module === "position_tracker") icon = "📈";
+      else if (module === "claude_engine" || msg.includes("Claude")) icon = "🤖";
+      else if (msg.includes("BUY") || msg.includes("trade")) icon = "💰";
+      else if (msg.includes("SELL")) icon = "📤";
+      else if (msg.includes("No open")) icon = "📭";
+      else if (msg.includes("authenticated")) icon = "🔐";
+      else if (msg.includes("HTTP")) icon = "🌐";
+      else if (msg.includes("──") || msg.includes("══")) icon = "";
+      
+      // Clean up the message
+      let cleanMsg = msg
+        .replace(/^[─═]+$/, "") // Remove separator lines
+        .replace(/HTTP Request: GET/, "→")
+        .replace(/"HTTP\/1.1 200 OK"/, "✓")
+        .trim();
+      
+      // Skip pure separator lines
+      if (!cleanMsg || /^[─═]+$/.test(cleanMsg)) {
+        cleanMsg = "───────────────";
+        icon = "";
+      }
+      
+      return { time, level, message: cleanMsg, icon };
+    }
+    
+    // Fallback for unmatched lines
+    return { time: "", level: "INFO", message: line, icon: "📋" };
+  };
+
   const fetchLogs = async () => {
     try {
       const data = await apiFetch<{ logs: string[]; total: number }>("/api/logs?lines=30");
@@ -1193,26 +1236,59 @@ export default function Dashboard() {
               Refresh
             </button>
           </div>
-          <div style={{ fontFamily: "monospace", fontSize: 11, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 12, lineHeight: 1.7 }}>
             {logs.length === 0 ? (
               <div style={{ color: "#555" }}>No logs yet...</div>
             ) : (
-              logs.map((line, i) => (
-                <div
-                  key={i}
-                  style={{
-                    color: line.includes("ERROR") ? "#f87171" :
-                           line.includes("WARNING") ? "#facc15" :
-                           line.includes("Claude") || line.includes("Kalshi") ? "#8b5cf6" :
-                           line.includes("BUY") || line.includes("trade") ? "#4ade80" :
-                           "#888",
-                    padding: "2px 0",
-                    borderBottom: "1px solid #1a1a1a",
-                  }}
-                >
-                  {line}
-                </div>
-              ))
+              logs.map((line, i) => {
+                const parsed = formatLogLine(line);
+                // Skip empty separator lines
+                if (parsed.message === "───────────────") {
+                  return (
+                    <div key={i} style={{ color: "#333", padding: "4px 0", textAlign: "center", fontSize: 10 }}>
+                      ─ ─ ─
+                    </div>
+                  );
+                }
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 8,
+                      padding: "6px 8px",
+                      marginBottom: 4,
+                      background: parsed.level === "ERROR" ? "rgba(248, 113, 113, 0.1)" :
+                                  parsed.level === "WARNING" ? "rgba(250, 204, 21, 0.1)" :
+                                  "rgba(255,255,255,0.02)",
+                      borderRadius: 6,
+                      borderLeft: parsed.level === "ERROR" ? "3px solid #f87171" :
+                                  parsed.level === "WARNING" ? "3px solid #facc15" :
+                                  "3px solid #333",
+                    }}
+                  >
+                    <span style={{ fontSize: 14 }}>{parsed.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <span style={{
+                        color: parsed.level === "ERROR" ? "#f87171" :
+                               parsed.level === "WARNING" ? "#facc15" :
+                               parsed.message.includes("Claude") || parsed.message.includes("Kalshi") ? "#a78bfa" :
+                               parsed.message.includes("authenticated") ? "#4ade80" :
+                               parsed.message.includes("started") ? "#60a5fa" :
+                               "#ccc",
+                      }}>
+                        {parsed.message}
+                      </span>
+                    </div>
+                    {parsed.time && (
+                      <span style={{ color: "#555", fontSize: 10, fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                        {parsed.time}
+                      </span>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
