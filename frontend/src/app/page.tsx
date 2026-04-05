@@ -929,46 +929,119 @@ export default function Dashboard() {
   };
 
   // Parse raw log line into readable format
-  const formatLogLine = (line: string): { time: string; level: string; message: string; icon: string } => {
+  const formatLogLine = (line: string): { time: string; level: string; message: string; icon: string; skip: boolean } => {
     // Pattern: "Apr 05 22:47:46 neroclaude python[144630]: 2026-04-05 15:47:46,736 module_name LEVEL message"
-    const match = line.match(/^(\w+ \d+ \d+:\d+:\d+).*?\d{4}-\d{2}-\d{2} \d+:\d+:\d+,\d+ (\w+) (INFO|WARNING|ERROR|DEBUG)\s+(.*)$/);
+    const match = line.match(/^(\w+ \d+ (\d+:\d+:\d+)).*?\d{4}-\d{2}-\d{2} \d+:\d+:\d+,\d+ (\w+) (INFO|WARNING|ERROR|DEBUG)\s+(.*)$/);
     
-    if (match) {
-      const [, rawTime, module, level, msg] = match;
-      const time = rawTime.replace(/^\w+ \d+ /, ""); // Just "22:47:46"
-      
-      // Choose icon based on module/message
-      let icon = "📋";
-      if (module === "bot" && msg.includes("started")) icon = "🚀";
-      else if (module === "bot" && msg.includes("Cycle")) icon = "🔄";
-      else if (module === "kalshi") icon = "📊";
-      else if (module === "position_tracker") icon = "📈";
-      else if (module === "claude_engine" || msg.includes("Claude")) icon = "🤖";
-      else if (msg.includes("BUY") || msg.includes("trade")) icon = "💰";
-      else if (msg.includes("SELL")) icon = "📤";
-      else if (msg.includes("No open")) icon = "📭";
-      else if (msg.includes("authenticated")) icon = "🔐";
-      else if (msg.includes("HTTP")) icon = "🌐";
-      else if (msg.includes("──") || msg.includes("══")) icon = "";
-      
-      // Clean up the message
-      let cleanMsg = msg
-        .replace(/^[─═]+$/, "") // Remove separator lines
-        .replace(/HTTP Request: GET/, "→")
-        .replace(/"HTTP\/1.1 200 OK"/, "✓")
-        .trim();
-      
-      // Skip pure separator lines
-      if (!cleanMsg || /^[─═]+$/.test(cleanMsg)) {
-        cleanMsg = "───────────────";
-        icon = "";
-      }
-      
-      return { time, level, message: cleanMsg, icon };
+    if (!match) {
+      return { time: "", level: "INFO", message: line, icon: "📋", skip: false };
     }
     
-    // Fallback for unmatched lines
-    return { time: "", level: "INFO", message: line, icon: "📋" };
+    const [, , time, module, level, msg] = match;
+    
+    // Skip noise
+    if (msg.includes("HTTP Request") || msg.includes("──") || msg.includes("══") || !msg.trim()) {
+      return { time: "", level: "", message: "", icon: "", skip: true };
+    }
+    
+    let icon = "📋";
+    let message = msg;
+    
+    // Bot startup
+    if (msg.includes("Bot started")) {
+      icon = "🚀";
+      const interval = msg.match(/Poll interval: (\d+)s/);
+      message = `Bot started (checking every ${interval ? Math.round(parseInt(interval[1])/60) : "?"}min)`;
+    }
+    // Bot mode
+    else if (msg.includes("Bot mode:")) {
+      icon = "⚙️";
+      message = msg.replace("Bot mode: ", "Mode: ");
+    }
+    // Platforms
+    else if (msg.includes("Platforms:")) {
+      icon = "🎯";
+      const poly = msg.includes("Polymarket=True");
+      const kalshi = msg.includes("Kalshi=True");
+      message = `Active: ${[poly && "Polymarket", kalshi && "Kalshi"].filter(Boolean).join(", ") || "None"}`;
+    }
+    // Kalshi initialized
+    else if (msg.includes("SDK initialized") || msg.includes("authenticated")) {
+      icon = "🔐";
+      message = "Kalshi connected & authenticated";
+    }
+    // Cycle start
+    else if (msg.includes("Cycle")) {
+      icon = "🔄";
+      message = "Scanning markets...";
+    }
+    // Claude decision from claude_engine module (detailed)
+    else if (msg.includes("Claude decision:")) {
+      icon = "🤖";
+      // Pattern: "Claude decision: HOLD yes Contract | HOLD due to reason..."
+      const decisionMatch = msg.match(/Claude decision:\s*(\w+)/);
+      const decision = decisionMatch?.[1] || "?";
+      
+      if (decision === "BUY") {
+        icon = "💰";
+        const confMatch = msg.match(/confidence=([\d.]+)/);
+        const conf = confMatch ? `${Math.round(parseFloat(confMatch[1])*100)}%` : "";
+        message = `🤖 Claude: BUY ${conf ? `(${conf} confidence)` : ""}`;
+      } else if (decision === "SELL") {
+        icon = "📤";
+        message = "🤖 Claude: SELL";
+      } else {
+        // HOLD - extract short reason
+        const reasonMatch = msg.match(/HOLD due to ([^:]+)/);
+        const reason = reasonMatch?.[1]?.substring(0, 40) || "low confidence";
+        message = `⏸️ Skip: ${reason}`;
+      }
+    }
+    // Claude decision short form (from bot module)
+    else if (msg.includes("Claude:")) {
+      const decision = msg.match(/Claude:\s*(\w+)/)?.[1] || "?";
+      if (decision === "BUY") { icon = "💰"; message = "Claude says: BUY"; }
+      else if (decision === "SELL") { icon = "📤"; message = "Claude says: SELL"; }
+      else { return { time, level, message: "", icon: "", skip: true }; } // Skip duplicate HOLD
+    }
+    // Kalshi market analysis
+    else if (msg.startsWith("Kalshi:")) {
+      icon = "📊";
+      // Extract: "Kalshi: yes Los Angeles C,no Minnesota... | YES=0.408 | spread=0.4080"
+      const parts = msg.match(/Kalshi:\s*(.*?)\s*\|\s*YES=([\d.]+)\s*\|\s*spread=([\d.]+)/);
+      if (parts) {
+        const [, contracts, yesPrice, spread] = parts;
+        // Get first contract name, clean it
+        const firstContract = contracts.split(",")[0].replace(/^(yes|no)\s+/i, "").substring(0, 30);
+        message = `📊 ${firstContract}... @ ${(parseFloat(yesPrice)*100).toFixed(0)}¢`;
+      } else {
+        message = "Analyzing market...";
+      }
+    }
+    // Position tracker
+    else if (msg.includes("No open positions")) {
+      icon = "📭";
+      message = "No open positions";
+    }
+    else if (module === "position_tracker") {
+      icon = "📈";
+    }
+    // Trade execution
+    else if (msg.includes("BUY") || msg.includes("BOUGHT")) {
+      icon = "💰";
+    }
+    else if (msg.includes("SELL") || msg.includes("SOLD")) {
+      icon = "📤";
+    }
+    // Errors/Warnings
+    else if (level === "ERROR") {
+      icon = "❌";
+    }
+    else if (level === "WARNING") {
+      icon = "⚠️";
+    }
+    
+    return { time, level, message, icon, skip: false };
   };
 
   const fetchLogs = async () => {
@@ -1236,53 +1309,54 @@ export default function Dashboard() {
               Refresh
             </button>
           </div>
-          <div style={{ fontSize: 12, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 13, lineHeight: 1.8 }}>
             {logs.length === 0 ? (
               <div style={{ color: "#555" }}>No logs yet...</div>
             ) : (
               logs.map((line, i) => {
                 const parsed = formatLogLine(line);
-                // Skip empty separator lines
-                if (parsed.message === "───────────────") {
-                  return (
-                    <div key={i} style={{ color: "#333", padding: "4px 0", textAlign: "center", fontSize: 10 }}>
-                      ─ ─ ─
-                    </div>
-                  );
-                }
+                // Skip noise (HTTP requests, separators)
+                if (parsed.skip) return null;
+                
                 return (
                   <div
                     key={i}
                     style={{
                       display: "flex",
-                      alignItems: "flex-start",
-                      gap: 8,
-                      padding: "6px 8px",
-                      marginBottom: 4,
-                      background: parsed.level === "ERROR" ? "rgba(248, 113, 113, 0.1)" :
-                                  parsed.level === "WARNING" ? "rgba(250, 204, 21, 0.1)" :
-                                  "rgba(255,255,255,0.02)",
-                      borderRadius: 6,
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 12px",
+                      marginBottom: 6,
+                      background: parsed.level === "ERROR" ? "rgba(248, 113, 113, 0.15)" :
+                                  parsed.level === "WARNING" ? "rgba(250, 204, 21, 0.15)" :
+                                  parsed.icon === "💰" ? "rgba(74, 222, 128, 0.1)" :
+                                  parsed.icon === "🚀" ? "rgba(96, 165, 250, 0.1)" :
+                                  "rgba(255,255,255,0.03)",
+                      borderRadius: 8,
                       borderLeft: parsed.level === "ERROR" ? "3px solid #f87171" :
                                   parsed.level === "WARNING" ? "3px solid #facc15" :
+                                  parsed.icon === "💰" ? "3px solid #4ade80" :
+                                  parsed.icon === "🚀" ? "3px solid #60a5fa" :
                                   "3px solid #333",
                     }}
                   >
-                    <span style={{ fontSize: 14 }}>{parsed.icon}</span>
+                    <span style={{ fontSize: 16 }}>{parsed.icon}</span>
                     <div style={{ flex: 1 }}>
                       <span style={{
                         color: parsed.level === "ERROR" ? "#f87171" :
                                parsed.level === "WARNING" ? "#facc15" :
-                               parsed.message.includes("Claude") || parsed.message.includes("Kalshi") ? "#a78bfa" :
-                               parsed.message.includes("authenticated") ? "#4ade80" :
-                               parsed.message.includes("started") ? "#60a5fa" :
-                               "#ccc",
+                               parsed.icon === "💰" ? "#4ade80" :
+                               parsed.icon === "🚀" ? "#60a5fa" :
+                               parsed.icon === "🔐" ? "#4ade80" :
+                               parsed.icon === "⏸️" ? "#888" :
+                               "#ddd",
+                        fontWeight: parsed.icon === "🚀" || parsed.icon === "💰" ? 500 : 400,
                       }}>
                         {parsed.message}
                       </span>
                     </div>
                     {parsed.time && (
-                      <span style={{ color: "#555", fontSize: 10, fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                      <span style={{ color: "#666", fontSize: 11, fontFamily: "monospace", whiteSpace: "nowrap" }}>
                         {parsed.time}
                       </span>
                     )}
