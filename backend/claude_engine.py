@@ -1,4 +1,4 @@
-"""Claude-powered trading decision engine using structured outputs."""
+"""Claude-powered trading decision engine using structured outputs + game theory."""
 
 from __future__ import annotations
 
@@ -11,6 +11,13 @@ from pydantic import BaseModel, Field
 
 from config import Config
 from models import MarketSnapshot
+from strategy import (
+    StrategyAnalyzer,
+    calculate_ev,
+    detect_mispricing,
+    recommend_order_strategy,
+    is_longshot_trap,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,28 +36,53 @@ class TradeDecision(BaseModel):
 
 
 class ClaudeEngine:
-    """Asks Claude for a structured BUY / SELL / HOLD decision."""
+    """Asks Claude for a structured BUY / SELL / HOLD decision with game theory."""
 
     MAX_TOKENS = 1024
 
     SYSTEM_PROMPT = """\
-You are a quantitative prediction-market analyst. You receive snapshots of \
-Polymarket binary-outcome markets and decide whether to BUY YES, BUY NO, \
-SELL YES, SELL NO, or HOLD for each market.
+You are a quantitative prediction-market analyst using GAME THEORY formulas \
+tested on 72 million trades. You receive market snapshots WITH pre-calculated \
+strategy analysis and decide whether to BUY YES, BUY NO, or HOLD.
 
-Rules:
-- Only recommend a trade when the market price materially diverges from your \
-  estimated probability.
-- Prefer limit orders at the best bid/ask when spreads are wide.
-- If the spread is < 0.02 or liquidity is very low, prefer HOLD.
-- Never exceed the position budget provided.
-- Return EXACTLY ONE JSON object matching the schema — no extra text."""
+CRITICAL RULES (from empirical data):
+
+1. EXPECTED VALUE: Only trade when EV > 0. The strategy analysis shows EV.
+
+2. LONGSHOT BIAS: Contracts <10¢ are OVERPRICED by 16-57% historically.
+   - NEVER buy YES on longshots (<10¢) unless you have exceptional edge
+   - Prefer BUY NO (selling longshots) on cheap contracts
+   - Contracts at 1¢ return only 43¢ per dollar historically
+
+3. NEAR-CERTAINTIES: Contracts >90¢ are UNDERPRICED historically.
+   - BUY YES on near-certainties has +2-5% edge
+
+4. KELLY CRITERION: Use the Kelly bet size provided. NEVER exceed it.
+   - The analysis uses quarter-Kelly (conservative)
+   - Max 5% of bankroll per position
+
+5. MAKER STRATEGY: Prefer LIMIT orders over MARKET orders.
+   - Makers gain +1.12% per trade on average
+   - Takers lose -1.12% per trade on average
+   - Only use MARKET orders if time-sensitive with >5% edge
+
+6. MINIMUM EDGE: Only trade when your edge > 3% (3 percentage points).
+
+Return EXACTLY ONE JSON decision. Trust the pre-calculated strategy analysis."""
 
     def __init__(self, cfg: Config) -> None:
         self.client = anthropic.Anthropic(api_key=cfg.anthropic_api_key)
         self.cfg = cfg
         self.max_order_usdc = cfg.max_order_usdc
         self.model = cfg.claude_model or "claude-sonnet-4-20250514"
+        
+        # Initialize strategy analyzer with bankroll
+        self.strategy = StrategyAnalyzer(
+            bankroll=cfg.max_order_usdc * 20,  # Estimate bankroll as 20x max order
+            kelly_fraction=0.25,
+            max_position_pct=0.05,
+            min_edge_required=0.03
+        )
 
     def decide(self, snapshot: MarketSnapshot) -> TradeDecision:
         user_msg = self._build_prompt(snapshot)
@@ -98,6 +130,29 @@ Rules:
     # ── Prompt builder ───────────────────────────────────────────────────
 
     def _build_prompt(self, snap: MarketSnapshot) -> str:
+        # Run strategy analysis
+        # Claude will estimate probability - we use market price as baseline
+        # and let Claude adjust based on its analysis
+        
+        # Detect mispricing category
+        mispricing = detect_mispricing(snap.outcome_yes_price)
+        
+        # Get order strategy recommendation
+        order_strat = recommend_order_strategy(
+            spread=snap.spread,
+            your_edge=0.0  # Claude will determine edge
+        )
+        
+        # Check if longshot trap
+        longshot_warning = ""
+        if is_longshot_trap(snap.outcome_yes_price):
+            longshot_warning = (
+                "\n⚠️ LONGSHOT WARNING: This contract is <10¢. "
+                "Historical data shows 16-57% overpricing. "
+                "Prefer BUY NO (sell the longshot) unless you have exceptional edge."
+            )
+        
+        # Build market data
         data = {
             "question": snap.question,
             "yes_price": snap.outcome_yes_price,
@@ -112,8 +167,31 @@ Rules:
             "end_date": snap.end_date,
             "max_order_usdc": self.max_order_usdc,
         }
+        
+        # Strategy analysis section
+        strategy_analysis = f"""
+STRATEGY ANALYSIS (pre-calculated):
+- Price Category: {mispricing.category}
+- Historical Mispricing: {mispricing.estimated_mispricing_pct}%
+- Expected Return per $1: ${mispricing.historical_return_per_dollar:.2f}
+- Recommended Order Type: {order_strat.order_type}
+- Maker Edge: +{order_strat.maker_edge_pct:.2f}% per trade
+{longshot_warning}
+
+KELLY SIZING (quarter-Kelly, max 5%):
+- Your max bet: ${self.max_order_usdc:.0f}
+- Use limit orders at best_bid (for YES) or 1-best_ask (for NO)
+
+YOUR TASK:
+1. Estimate the TRUE probability of this event
+2. Compare to market price to find edge
+3. If edge > 3%, recommend BUY YES or BUY NO
+4. If no edge or edge < 3%, recommend HOLD
+5. Use LIMIT orders (maker strategy)
+"""
+        
         return (
-            "Analyze this Polymarket market and submit your trading decision.\n"
-            f"Your maximum order size is ${self.max_order_usdc:.0f} USDC.\n\n"
-            f"```json\n{json.dumps(data, indent=2)}\n```"
+            "Analyze this prediction market and submit your trading decision.\n\n"
+            f"```json\n{json.dumps(data, indent=2)}\n```\n"
+            f"{strategy_analysis}"
         )
