@@ -711,8 +711,9 @@ export default function Dashboard() {
       {summary && (
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
             gap: 12,
             marginBottom: 20,
           }}
