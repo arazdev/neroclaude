@@ -541,6 +541,19 @@ export default function Dashboard() {
   // Wallet state
   const [wallet, setWallet] = useState<Wallet | null>(null);
 
+  // Logs state
+  const [logs, setLogs] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+
+  const fetchLogs = async () => {
+    try {
+      const data = await apiFetch<{ logs: string[]; total: number }>("/api/logs?lines=30");
+      setLogs(data.logs);
+    } catch {
+      setLogs(["Failed to fetch logs"]);
+    }
+  };
+
   const refresh = async () => {
     try {
       setError(null);
@@ -671,6 +684,20 @@ export default function Dashboard() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button
+            onClick={() => { fetchLogs(); setShowLogs(!showLogs); }}
+            style={{
+              background: showLogs ? "#8b5cf6" : "#333",
+              color: "#fff",
+              border: "1px solid #444",
+              borderRadius: 8,
+              padding: "8px 16px",
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Logs
+          </button>
+          <button
             onClick={loadSettings}
             style={{
               background: "#333",
@@ -722,6 +749,63 @@ export default function Dashboard() {
           }}
         >
           {error}
+        </div>
+      )}
+
+      {/* Logs Panel */}
+      {showLogs && (
+        <div
+          style={{
+            background: "#0a0a0f",
+            border: "1px solid #333",
+            borderRadius: 12,
+            padding: "16px",
+            marginBottom: 24,
+            maxHeight: 300,
+            overflow: "auto",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#8b5cf6" }}>
+              Bot Activity Logs
+            </span>
+            <button
+              onClick={fetchLogs}
+              style={{
+                background: "#222",
+                color: "#888",
+                border: "1px solid #333",
+                borderRadius: 4,
+                padding: "4px 8px",
+                cursor: "pointer",
+                fontSize: 11,
+              }}
+            >
+              Refresh
+            </button>
+          </div>
+          <div style={{ fontFamily: "monospace", fontSize: 11, lineHeight: 1.6 }}>
+            {logs.length === 0 ? (
+              <div style={{ color: "#555" }}>No logs yet...</div>
+            ) : (
+              logs.map((line, i) => (
+                <div
+                  key={i}
+                  style={{
+                    color: line.includes("ERROR") ? "#f87171" :
+                           line.includes("WARNING") ? "#facc15" :
+                           line.includes("Claude") || line.includes("Kalshi") ? "#8b5cf6" :
+                           line.includes("BUY") || line.includes("trade") ? "#4ade80" :
+                           "#888",
+                    padding: "2px 0",
+                    borderBottom: "1px solid #1a1a1a",
+                  }}
+                >
+                  {line}
+                </div>
+              ))
+            )}
+          </div>
         </div>
       )}
 

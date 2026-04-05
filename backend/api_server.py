@@ -69,6 +69,27 @@ def health():
     return {"status": "ok", "bot": "NEROCLAUDE", "time": datetime.now(timezone.utc).isoformat()}
 
 
+@app.get("/api/logs")
+def get_logs(lines: int = 50):
+    """Get recent bot logs from systemd journal."""
+    try:
+        result = subprocess.run(
+            ["journalctl", "-u", "botclaude", "-n", str(min(lines, 200)), "--no-pager", "-o", "short"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        log_lines = result.stdout.strip().split("\n") if result.stdout else []
+        # Filter to only show relevant log messages
+        filtered = [
+            line for line in log_lines 
+            if any(x in line for x in ["INFO", "WARNING", "ERROR", "Cycle", "Market", "Claude", "Kalshi", "order", "trade", "HOLD", "BUY", "SELL"])
+        ]
+        return {"logs": filtered[-lines:], "total": len(filtered)}
+    except Exception as e:
+        return {"logs": [f"Error reading logs: {e}"], "total": 0}
+
+
 @app.get("/api/positions")
 def get_positions():
     """All positions (open + closed)."""
