@@ -37,6 +37,8 @@ class SettingsUpdate(BaseModel):
     dry_run: bool | None = None
     bot_mode: str | None = None
     claude_model: str | None = None
+    poly_enabled: bool | None = None
+    kalshi_enabled: bool | None = None
     max_order_usdc: float | None = None
     max_position_usdc: float | None = None
     poll_interval: int | None = None
@@ -174,6 +176,8 @@ def get_settings():
         "dry_run": env.get("DRY_RUN", "true").lower() == "true",
         "bot_mode": env.get("BOT_MODE", "claude"),
         "claude_model": env.get("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
+        "poly_enabled": env.get("POLY_ENABLED", "true").lower() == "true",
+        "kalshi_enabled": env.get("KALSHI_ENABLED", "true").lower() == "true",
         "max_order_usdc": float(env.get("MAX_ORDER_USDC", "25.0")),
         "max_position_usdc": float(env.get("MAX_POSITION_USDC", "100.0")),
         "poll_interval": int(env.get("POLL_INTERVAL_SECONDS", "300")),
@@ -194,6 +198,10 @@ def update_settings(settings: SettingsUpdate):
         if settings.claude_model not in CLAUDE_MODELS:
             return JSONResponse(status_code=400, content={"error": "Invalid claude_model"})
         updates["CLAUDE_MODEL"] = settings.claude_model
+    if settings.poly_enabled is not None:
+        updates["POLY_ENABLED"] = "true" if settings.poly_enabled else "false"
+    if settings.kalshi_enabled is not None:
+        updates["KALSHI_ENABLED"] = "true" if settings.kalshi_enabled else "false"
     if settings.max_order_usdc is not None:
         updates["MAX_ORDER_USDC"] = str(settings.max_order_usdc)
     if settings.max_position_usdc is not None:

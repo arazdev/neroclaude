@@ -159,9 +159,13 @@ def main() -> None:
 
     # Only init market maker if needed
     mm = None
+    kalshi_mm = None
     if mode in ("mm", "all"):
         from market_maker import MarketMaker
         mm = MarketMaker(cfg, poly, tracker)
+        # Also init Kalshi MM
+        from kalshi_mm import KalshiMarketMaker
+        kalshi_mm = KalshiMarketMaker(cfg, tracker)
 
     logger.info("Bot started. Poll interval: %ds", cfg.poll_interval)
 
@@ -181,6 +185,11 @@ def main() -> None:
                     n = mm.run_cycle(cfg.dry_run)
                     if n:
                         logger.info("Market maker posted %d quotes", n)
+                
+                if kalshi_mm:
+                    n = kalshi_mm.run_cycle(cfg.dry_run)
+                    if n:
+                        logger.info("Kalshi market maker posted %d quotes", n)
 
                 # ── Slower strategies (run at poll_interval) ─────
                 arb_counter += 1

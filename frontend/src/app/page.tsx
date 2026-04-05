@@ -50,6 +50,8 @@ interface Settings {
   dry_run: boolean;
   bot_mode: string;
   claude_model: string;
+  poly_enabled: boolean;
+  kalshi_enabled: boolean;
   max_order_usdc: number;
   max_position_usdc: number;
   poll_interval: number;
@@ -299,6 +301,47 @@ function SettingsPanel({
               {local.dry_run ? "ON" : "OFF"}
             </button>
           </label>
+        </div>
+
+        {/* PLATFORMS */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+            Trading Platforms
+          </label>
+          <div style={{ display: "flex", gap: 12 }}>
+            <button
+              onClick={() => setLocal({ ...local, poly_enabled: !local.poly_enabled })}
+              style={{
+                flex: 1,
+                background: local.poly_enabled ? "#8b5cf6" : "#1a1a2e",
+                color: local.poly_enabled ? "#fff" : "#666",
+                border: local.poly_enabled ? "2px solid #8b5cf6" : "2px solid #333",
+                borderRadius: 8,
+                padding: "10px 12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              {local.poly_enabled ? "✓" : "○"} Polymarket
+            </button>
+            <button
+              onClick={() => setLocal({ ...local, kalshi_enabled: !local.kalshi_enabled })}
+              style={{
+                flex: 1,
+                background: local.kalshi_enabled ? "#ec4899" : "#1a1a2e",
+                color: local.kalshi_enabled ? "#fff" : "#666",
+                border: local.kalshi_enabled ? "2px solid #ec4899" : "2px solid #333",
+                borderRadius: 8,
+                padding: "10px 12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              {local.kalshi_enabled ? "✓" : "○"} Kalshi
+            </button>
+          </div>
         </div>
 
         {/* BOT MODE */}
