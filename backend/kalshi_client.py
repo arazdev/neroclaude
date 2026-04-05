@@ -89,9 +89,9 @@ class KalshiClient:
     def parse_market(self, raw: dict[str, Any]) -> KalshiMarket | None:
         """Parse a raw Kalshi market dict into our model."""
         try:
-            # Kalshi prices are in cents (0-100), normalize to 0-1
-            yes_price = float(raw.get("yes_ask", raw.get("last_price", 0))) / 100.0
-            no_price = float(raw.get("no_ask", 0)) / 100.0
+            # Kalshi API v2 uses dollar prices (0-1.00) in "*_dollars" fields
+            yes_price = float(raw.get("yes_ask_dollars", raw.get("last_price_dollars", 0)))
+            no_price = float(raw.get("no_ask_dollars", 0))
 
             # Fallback: if no_ask missing, derive from yes
             if no_price == 0 and yes_price > 0:
@@ -100,13 +100,13 @@ class KalshiClient:
             return KalshiMarket(
                 ticker=raw.get("ticker", ""),
                 title=raw.get("title", ""),
-                subtitle=raw.get("subtitle", ""),
+                subtitle=raw.get("yes_sub_title", ""),
                 yes_price=yes_price,
                 no_price=no_price,
-                volume=int(raw.get("volume", 0)),
-                open_interest=int(raw.get("open_interest", 0)),
+                volume=int(float(raw.get("volume_fp", 0))),
+                open_interest=int(float(raw.get("open_interest_fp", 0))),
                 status=raw.get("status", ""),
-                category=raw.get("category", ""),
+                category=raw.get("market_type", ""),
                 event_ticker=raw.get("event_ticker", ""),
             )
         except Exception as exc:
@@ -119,6 +119,7 @@ class KalshiClient:
         markets = []
         for r in raw:
             m = self.parse_market(r)
-            if m and m.yes_price > 0.01:
+            # Include markets with any price data (yes or no)
+            if m and (m.yes_price > 0 or m.no_price > 0):
                 markets.append(m)
         return markets
