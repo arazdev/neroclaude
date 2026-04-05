@@ -150,7 +150,8 @@ def run_kalshi_cycle(
             best_bid=snap["yes_price"] - 0.01,
             best_ask=snap["yes_price"] + 0.01,
             spread=snap["spread"],
-            end_date="",
+            end_date=snap.get("end_date", ""),  # Pass expiration date
+            platform="kalshi",
         )
         
         decision = engine.decide(market_snap)

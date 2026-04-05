@@ -41,6 +41,10 @@ class Config:
     max_open_orders: int = int(_env("MAX_OPEN_ORDERS", "5"))
     min_liquidity_usdc: float = float(_env("MIN_LIQUIDITY_USDC", "500.0"))
 
+    # Trading Style - Short-term only
+    # Set to 1 for same-day trades, 5 for weekly, 30 for monthly
+    max_days_to_expiration: int = int(_env("MAX_DAYS_TO_EXPIRATION", "30"))
+
     # Bot
     poll_interval: int = int(_env("POLL_INTERVAL_SECONDS", "60"))
     dry_run: bool = _env("DRY_RUN", "true").lower() == "true"

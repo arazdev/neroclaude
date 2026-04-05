@@ -14,7 +14,9 @@ from strategy import (
     calculate_ev,
     detect_mispricing,
     is_longshot_trap,
+    is_too_long_term,
     KellyCalculator,
+    MAX_DAYS_TO_EXPIRATION,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,8 @@ class RiskManager:
     def check(self, decision: TradeDecision, snapshot: MarketSnapshot) -> RiskVerdict:
         """Run all risk checks including game theory validation."""
         checks = [
+            # SHORT-TERM ONLY - reject long-term markets FIRST
+            self._check_expiration,
             self._check_hold,
             self._check_order_size,
             self._check_total_exposure,
@@ -66,6 +70,22 @@ class RiskManager:
         return RiskVerdict(approved=True, reason="All checks passed")
 
     # ── Individual checks ────────────────────────────────────────────────
+
+    def _check_expiration(self, _d: TradeDecision, s: MarketSnapshot) -> RiskVerdict:
+        """CRITICAL: Reject long-term markets - short-term trading only."""
+        end_date = getattr(s, 'end_date', None) or getattr(s, 'close_time', None)
+        
+        if not end_date:
+            # If no expiration info, be cautious but allow
+            logger.warning("No expiration date in snapshot - proceeding with caution")
+            return RiskVerdict(True, "")
+        
+        is_rejected, reason = is_too_long_term(str(end_date))
+        
+        if is_rejected:
+            return RiskVerdict(False, f"SHORT-TERM ONLY: {reason}")
+        
+        return RiskVerdict(True, reason)
 
     def _check_hold(self, d: TradeDecision, _s: MarketSnapshot) -> RiskVerdict:
         if d.action.upper() == "HOLD":

@@ -47,6 +47,11 @@ strategy analysis and decide whether to BUY YES, BUY NO, or HOLD.
 
 CRITICAL RULES (from empirical data):
 
+0. SHORT-TERM ONLY: Only trade markets that expire within 30 days.
+   - NEVER buy positions that lock capital for months/years
+   - Quick entry/exit only - no long-term holds
+   - If expiration is >30 days away, ALWAYS HOLD
+
 1. EXPECTED VALUE: Only trade when EV > 0. The strategy analysis shows EV.
 
 2. LONGSHOT BIAS: Contracts <10¢ are OVERPRICED by 16-57% historically.

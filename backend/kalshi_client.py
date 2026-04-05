@@ -31,6 +31,7 @@ class KalshiMarket:
     status: str
     category: str
     event_ticker: str
+    close_time: str = ""  # Market expiration/close time
 
 
 @dataclass
@@ -161,6 +162,13 @@ class KalshiClient:
             if no_price == 0 and yes_price > 0:
                 no_price = 1.0 - yes_price
 
+            # Get close/expiration time - Kalshi uses close_time or expected_expiration_time
+            close_time = raw.get("close_time", "")
+            if not close_time:
+                close_time = raw.get("expected_expiration_time", "")
+            if not close_time:
+                close_time = raw.get("expiration_time", "")
+
             return KalshiMarket(
                 ticker=raw.get("ticker", ""),
                 title=raw.get("title", ""),
@@ -172,6 +180,7 @@ class KalshiClient:
                 status=raw.get("status", ""),
                 category=raw.get("market_type", ""),
                 event_ticker=raw.get("event_ticker", ""),
+                close_time=close_time,
             )
         except Exception as exc:
             logger.debug("Failed to parse Kalshi market: %s", exc)
@@ -188,8 +197,10 @@ class KalshiClient:
                 markets.append(m)
         return markets
 
-    def get_snapshots(self, limit: int = 10) -> list[dict]:
+    def get_snapshots(self, limit: int = 10, max_days_to_expiration: int = 30) -> list[dict]:
         """Get market snapshots in a format compatible with Claude analysis.
+        
+        Only returns SHORT-TERM markets (expiring within max_days_to_expiration).
         
         Returns list of dicts with:
             - ticker: Market ticker (used as token_id for orders)
@@ -198,16 +209,23 @@ class KalshiClient:
             - no_price: Current NO price (0-1)
             - spread: Price spread
             - volume: 24h volume
+            - end_date: Market expiration date (for short-term filtering)
             - platform: "kalshi"
         """
-        markets = self.get_active_markets(limit=limit * 2)  # Fetch more, filter to best
+        from strategy import is_short_term_market
+        
+        markets = self.get_active_markets(limit=limit * 5)  # Fetch more since we filter
         
         # Sort by volume and filter for tradeable markets
         tradeable = [m for m in markets if m.yes_price > 0 and m.yes_price < 1]
         tradeable.sort(key=lambda m: m.volume, reverse=True)
         
         snapshots = []
-        for m in tradeable[:limit]:
+        for m in tradeable:
+            # CRITICAL: Only include SHORT-TERM markets
+            if m.close_time and not is_short_term_market(m.close_time, max_days_to_expiration):
+                continue
+            
             spread = abs(1.0 - m.yes_price - m.no_price) if m.no_price > 0 else 0.02
             snapshots.append({
                 "ticker": m.ticker,
@@ -218,9 +236,14 @@ class KalshiClient:
                 "no_price": m.no_price,
                 "spread": spread,
                 "volume": m.volume,
+                "end_date": m.close_time,  # Pass expiration date
                 "platform": "kalshi",
             })
+            
+            if len(snapshots) >= limit:
+                break
         
+        logger.info("Found %d short-term markets (expiring within %d days)", len(snapshots), max_days_to_expiration)
         return snapshots
 
     # ─────────────────────────────────────────────────────────────────────

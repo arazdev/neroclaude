@@ -8,16 +8,27 @@ Implements 5 key formulas:
 4. Bayesian probability updater
 5. Maker vs Taker strategy
 
+TRADING STYLE: Short-term trades only
+- No multi-year positions
+- Quick entry/exit
+- Set MAX_DAYS_TO_EXPIRATION in .env (1=same-day, 5=weekly, 30=monthly)
+
 Source: @0xMovez analysis of 72.1M trades on Kalshi/Polymarket
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Optional, List
 
 logger = logging.getLogger(__name__)
+
+# Maximum days until expiration - configurable via .env
+# Set MAX_DAYS_TO_EXPIRATION=1 for same-day, 5 for weekly, 30 for monthly
+MAX_DAYS_TO_EXPIRATION = int(os.getenv("MAX_DAYS_TO_EXPIRATION", "30"))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -586,7 +597,8 @@ class StrategyAnalyzer:
         spread: float = 0.02,
         market_category: str = "default",
         is_correlated: bool = False,
-        time_sensitive: bool = False
+        time_sensitive: bool = False,
+        end_date: Optional[str] = None
     ) -> StrategyRecommendation:
         """
         Run full strategy analysis using all 5 formulas.
@@ -598,10 +610,55 @@ class StrategyAnalyzer:
             market_category: type of market for maker ratio
             is_correlated: True if correlated with existing positions
             time_sensitive: True if breaking news
+            end_date: market expiration date (REQUIRED for short-term filtering)
         
         Returns:
             StrategyRecommendation with complete analysis
         """
+        # 0. Check expiration - REJECT long-term markets FIRST
+        if end_date:
+            is_rejected, reason = is_too_long_term(end_date)
+            if is_rejected:
+                # Create rejection recommendation with correct field names
+                return StrategyRecommendation(
+                    ev_result=EVResult(
+                        ev_per_contract=0.0,
+                        roi_percent=0.0,
+                        edge=0.0,
+                        side="NONE",
+                        verdict="REJECT - TOO LONG TERM"
+                    ),
+                    mispricing=MispricingResult(
+                        price=market_price,
+                        category="REJECTED",
+                        estimated_mispricing_pct=0.0,
+                        recommended_action="REJECT",
+                        historical_return_per_dollar=0.0
+                    ),
+                    kelly_result=KellyResult(
+                        side="NO_BET",
+                        full_kelly_pct=0.0,
+                        adjusted_kelly_pct=0.0,
+                        bet_amount=0.0,
+                        contracts=0,
+                        max_profit=0.0,
+                        max_loss=0.0,
+                        risk_reward_ratio=0.0,
+                        reason=reason
+                    ),
+                    order_strategy=OrderStrategy(
+                        order_type="REJECT",
+                        reason=reason,
+                        maker_edge_pct=0.0,
+                        recommended_price=None,
+                        urgency="NONE"
+                    ),
+                    should_trade=False,
+                    action="REJECT",
+                    confidence=0.0,
+                    reasoning=f"❌ {reason}"
+                )
+        
         # 1. Expected Value
         ev_result = calculate_ev(market_price, your_probability)
         
@@ -702,6 +759,134 @@ def optimal_position_size(bankroll: float, price: float, your_prob: float) -> fl
     kelly = KellyCalculator(bankroll)
     result = kelly.calculate(price, your_prob)
     return result.bet_amount
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# EXPIRATION / SHORT-TERM TRADING FILTERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def parse_expiration_date(date_str: str) -> Optional[datetime]:
+    """Parse various date formats from market data."""
+    if not date_str:
+        return None
+    
+    # Try ISO format first (most common: "2026-04-08T23:59:59Z")
+    try:
+        clean = date_str.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean)
+        # Return naive datetime for comparison with utcnow()
+        return dt.replace(tzinfo=None)
+    except (ValueError, AttributeError):
+        pass
+    
+    # Try common formats
+    formats = [
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+    ]
+    
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str[:len(date_str.split("+")[0].split("Z")[0])], fmt)
+        except (ValueError, IndexError):
+            continue
+    
+    # Try extracting year (for far-future markets like "2050")
+    try:
+        import re
+        year_match = re.search(r'20\d{2}', date_str)
+        if year_match:
+            year = int(year_match.group())
+            # If just a year, assume end of year
+            return datetime(year, 12, 31)
+    except:
+        pass
+    
+    return None
+
+
+def days_until_expiration(date_str: str) -> Optional[int]:
+    """Calculate days until market expires."""
+    exp_date = parse_expiration_date(date_str)
+    if not exp_date:
+        return None
+    
+    now = datetime.utcnow()
+    delta = exp_date - now
+    return delta.days
+
+
+def is_short_term_market(end_date: str, max_days: int = MAX_DAYS_TO_EXPIRATION) -> bool:
+    """
+    Check if market expires within the allowed timeframe.
+    
+    Args:
+        end_date: expiration date string
+        max_days: maximum days until expiration (default 30)
+    
+    Returns:
+        True if market expires within max_days, False otherwise
+    """
+    days = days_until_expiration(end_date)
+    
+    if days is None:
+        # Can't parse date - be conservative, reject
+        logger.warning(f"Could not parse expiration date: {end_date}")
+        return False
+    
+    if days < 0:
+        # Already expired
+        return False
+    
+    return days <= max_days
+
+
+def is_too_long_term(end_date: str, max_days: int = MAX_DAYS_TO_EXPIRATION) -> tuple[bool, str]:
+    """
+    Check if market is too long-term for quick trading.
+    
+    Returns:
+        (is_rejected, reason)
+    """
+    days = days_until_expiration(end_date)
+    
+    if days is None:
+        return True, "Could not parse expiration date - rejecting for safety"
+    
+    if days < 0:
+        return True, "Market already expired"
+    
+    if days > max_days:
+        if days > 365:
+            years = days // 365
+            return True, f"Market expires in {years}+ years - too long term (max {max_days} days)"
+        elif days > 30:
+            months = days // 30
+            return True, f"Market expires in {months}+ months ({days} days) - too long term (max {max_days} days)"
+        else:
+            return True, f"Market expires in {days} days - exceeds max {max_days} days"
+    
+    return False, f"OK - expires in {days} days"
+
+
+def filter_short_term_markets(markets: List[dict], max_days: int = MAX_DAYS_TO_EXPIRATION) -> List[dict]:
+    """
+    Filter a list of markets to only include short-term ones.
+    
+    Args:
+        markets: list of market dicts with 'end_date' or 'close_time' field
+        max_days: maximum days until expiration
+    
+    Returns:
+        Filtered list of short-term markets
+    """
+    result = []
+    for m in markets:
+        end_date = m.get("end_date") or m.get("close_time") or m.get("expiration_time", "")
+        if is_short_term_market(str(end_date), max_days):
+            result.append(m)
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════════════════
