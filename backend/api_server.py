@@ -92,6 +92,7 @@ def health():
 @app.get("/api/logs")
 def get_logs(lines: int = 50):
     """Get recent bot logs from systemd journal."""
+    import re
     try:
         result = subprocess.run(
             ["journalctl", "-u", "botclaude", "-n", str(min(lines, 200)), "--no-pager", "-o", "short"],
@@ -100,9 +101,15 @@ def get_logs(lines: int = 50):
             timeout=5,
         )
         log_lines = result.stdout.strip().split("\n") if result.stdout else []
+        # Strip journalctl prefix: "Apr 05 23:18:57 neroclaude python[145361]: " -> just the log message
+        cleaned = []
+        for line in log_lines:
+            # Remove "Apr 05 HH:MM:SS hostname python[PID]: " prefix
+            match = re.sub(r"^\w{3} \d{2} \d{2}:\d{2}:\d{2} \S+ python\[\d+\]: ", "", line)
+            cleaned.append(match)
         # Filter to only show relevant log messages
         filtered = [
-            line for line in log_lines 
+            line for line in cleaned 
             if any(x in line for x in ["INFO", "WARNING", "ERROR", "Cycle", "Market", "Claude", "Kalshi", "order", "trade", "HOLD", "BUY", "SELL"])
         ]
         return {"logs": filtered[-lines:], "total": len(filtered)}

@@ -930,14 +930,14 @@ export default function Dashboard() {
 
   // Parse raw log line into readable format
   const formatLogLine = (line: string): { time: string; level: string; message: string; icon: string; skip: boolean } => {
-    // Pattern: "Apr 05 22:47:46 neroclaude python[144630]: 2026-04-05 15:47:46,736 module_name LEVEL message"
-    const match = line.match(/^(\w+ \d+ (\d+:\d+:\d+)).*?\d{4}-\d{2}-\d{2} \d+:\d+:\d+,\d+ (\w+) (INFO|WARNING|ERROR|DEBUG)\s+(.*)$/);
+    // Pattern: "2026-04-05 16:18:57,490 bot INFO ── Kalshi Cycle ──"
+    const match = line.match(/^\d{4}-\d{2}-\d{2} (\d+:\d+:\d+),\d+ (\w+) (INFO|WARNING|ERROR|DEBUG)\s+(.*)$/);
     
     if (!match) {
       return { time: "", level: "INFO", message: line, icon: "📋", skip: false };
     }
     
-    const [, , time, module, level, msg] = match;
+    const [, time, module, level, msg] = match;
     
     // Skip noise
     if (msg.includes("HTTP Request") || msg.includes("──") || msg.includes("══") || !msg.trim()) {
