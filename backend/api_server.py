@@ -36,9 +36,18 @@ app.add_middleware(
 class SettingsUpdate(BaseModel):
     dry_run: bool | None = None
     bot_mode: str | None = None
+    claude_model: str | None = None
     max_order_usdc: float | None = None
     max_position_usdc: float | None = None
     poll_interval: int | None = None
+
+# Valid Claude models
+CLAUDE_MODELS = [
+    "claude-3-haiku-20240307",
+    "claude-3-5-haiku-20241022",
+    "claude-3-5-sonnet-20241022",
+    "claude-sonnet-4-20250514",
+]
 
 # Simple bearer token auth — set API_SECRET in .env
 API_SECRET = os.getenv("API_SECRET", "")
@@ -164,6 +173,7 @@ def get_settings():
     return {
         "dry_run": env.get("DRY_RUN", "true").lower() == "true",
         "bot_mode": env.get("BOT_MODE", "claude"),
+        "claude_model": env.get("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
         "max_order_usdc": float(env.get("MAX_ORDER_USDC", "25.0")),
         "max_position_usdc": float(env.get("MAX_POSITION_USDC", "100.0")),
         "poll_interval": int(env.get("POLL_INTERVAL_SECONDS", "300")),
@@ -180,6 +190,10 @@ def update_settings(settings: SettingsUpdate):
         if settings.bot_mode not in ("claude", "arb", "cross", "mm", "all"):
             return JSONResponse(status_code=400, content={"error": "Invalid bot_mode"})
         updates["BOT_MODE"] = settings.bot_mode
+    if settings.claude_model is not None:
+        if settings.claude_model not in CLAUDE_MODELS:
+            return JSONResponse(status_code=400, content={"error": "Invalid claude_model"})
+        updates["CLAUDE_MODEL"] = settings.claude_model
     if settings.max_order_usdc is not None:
         updates["MAX_ORDER_USDC"] = str(settings.max_order_usdc)
     if settings.max_position_usdc is not None:

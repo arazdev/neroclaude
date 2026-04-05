@@ -43,6 +43,8 @@ class Config:
     # Modes: "claude" (AI directional), "arb" (YES+NO mispricing),
     #        "cross" (Kalshi cross-platform), "mm" (market making), "all"
     bot_mode: str = _env("BOT_MODE", "all")
+    # Claude AI model (claude-3-haiku-20240307 is cheapest, claude-sonnet-4-20250514 is best)
+    claude_model: str = _env("CLAUDE_MODEL", "claude-sonnet-4-20250514", required=False)
 
     # Arbitrage scanner
     arb_fee_buffer: float = float(_env("ARB_FEE_BUFFER", "0.02"))

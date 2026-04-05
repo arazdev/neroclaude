@@ -49,6 +49,7 @@ interface Summary {
 interface Settings {
   dry_run: boolean;
   bot_mode: string;
+  claude_model: string;
   max_order_usdc: number;
   max_position_usdc: number;
   poll_interval: number;
@@ -323,6 +324,34 @@ function SettingsPanel({
             <option value="cross">Cross-Platform Only</option>
             <option value="mm">Market Making Only</option>
             <option value="all">All Strategies</option>
+          </select>
+        </div>
+
+        {/* CLAUDE MODEL */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+            Claude Model
+            <span style={{ color: "#888", fontSize: 12, marginLeft: 8 }}>
+              (Haiku = cheapest, Sonnet 4 = best)
+            </span>
+          </label>
+          <select
+            value={local.claude_model}
+            onChange={(e) => setLocal({ ...local, claude_model: e.target.value })}
+            style={{
+              width: "100%",
+              background: "#0d0d15",
+              color: "#fff",
+              border: "1px solid #333",
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 14,
+            }}
+          >
+            <option value="claude-3-haiku-20240307">Claude 3 Haiku (cheapest ~$0.25/M)</option>
+            <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (~$1/M)</option>
+            <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (~$3/M)</option>
+            <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (best ~$3/M)</option>
           </select>
         </div>
 

@@ -31,7 +31,6 @@ class TradeDecision(BaseModel):
 class ClaudeEngine:
     """Asks Claude for a structured BUY / SELL / HOLD decision."""
 
-    MODEL = "claude-sonnet-4-20250514"
     MAX_TOKENS = 1024
 
     SYSTEM_PROMPT = """\
@@ -51,12 +50,13 @@ Rules:
         self.client = anthropic.Anthropic(api_key=cfg.anthropic_api_key)
         self.cfg = cfg
         self.max_order_usdc = cfg.max_order_usdc
+        self.model = cfg.claude_model or "claude-sonnet-4-20250514"
 
     def decide(self, snapshot: MarketSnapshot) -> TradeDecision:
         user_msg = self._build_prompt(snapshot)
 
         resp = self.client.messages.create(
-            model=self.MODEL,
+            model=self.model,
             max_tokens=self.MAX_TOKENS,
             system=self.SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
