@@ -188,6 +188,41 @@ class KalshiClient:
                 markets.append(m)
         return markets
 
+    def get_snapshots(self, limit: int = 10) -> list[dict]:
+        """Get market snapshots in a format compatible with Claude analysis.
+        
+        Returns list of dicts with:
+            - ticker: Market ticker (used as token_id for orders)
+            - question: Market question/title
+            - yes_price: Current YES price (0-1)
+            - no_price: Current NO price (0-1)
+            - spread: Price spread
+            - volume: 24h volume
+            - platform: "kalshi"
+        """
+        markets = self.get_active_markets(limit=limit * 2)  # Fetch more, filter to best
+        
+        # Sort by volume and filter for tradeable markets
+        tradeable = [m for m in markets if m.yes_price > 0 and m.yes_price < 1]
+        tradeable.sort(key=lambda m: m.volume, reverse=True)
+        
+        snapshots = []
+        for m in tradeable[:limit]:
+            spread = abs(1.0 - m.yes_price - m.no_price) if m.no_price > 0 else 0.02
+            snapshots.append({
+                "ticker": m.ticker,
+                "question": f"{m.title}: {m.subtitle}" if m.subtitle else m.title,
+                "token_id_yes": m.ticker,  # Kalshi uses ticker for orders
+                "token_id_no": m.ticker,
+                "yes_price": m.yes_price,
+                "no_price": m.no_price,
+                "spread": spread,
+                "volume": m.volume,
+                "platform": "kalshi",
+            })
+        
+        return snapshots
+
     # ─────────────────────────────────────────────────────────────────────
     # Authenticated endpoints (trading) - using official SDK
     # ─────────────────────────────────────────────────────────────────────

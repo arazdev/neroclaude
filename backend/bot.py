@@ -93,7 +93,7 @@ def run_cycle(
     cfg: Config,
 ) -> None:
     """Single bot cycle: fetch → decide → validate → execute."""
-    logger.info("── Cycle start ──")
+    logger.info("── Polymarket Cycle ──")
 
     snapshots = poly.get_snapshots(limit=5)
     if not snapshots:
@@ -118,6 +118,99 @@ def run_cycle(
     tracker.log_summary()
 
 
+def run_kalshi_cycle(
+    kalshi,
+    engine: ClaudeEngine,
+    tracker: PositionTracker,
+    cfg: Config,
+) -> None:
+    """Single Kalshi cycle: fetch markets → ask Claude → execute."""
+    logger.info("── Kalshi Cycle ──")
+    
+    snapshots = kalshi.get_snapshots(limit=5)
+    if not snapshots:
+        logger.warning("No Kalshi market snapshots available")
+        return
+    
+    for snap in snapshots:
+        logger.info("Kalshi: %s | YES=%.3f | spread=%.4f", 
+                    snap["question"][:60], snap["yes_price"], snap["spread"])
+        
+        # Create a simple snapshot object for Claude
+        from polymarket_client import MarketSnapshot
+        market_snap = MarketSnapshot(
+            condition_id=snap["ticker"],
+            question=snap["question"],
+            token_id_yes=snap["ticker"],
+            token_id_no=snap["ticker"],
+            outcome_yes_price=snap["yes_price"],
+            outcome_no_price=snap["no_price"],
+            volume_24h=float(snap["volume"]),
+            liquidity=float(snap["volume"]) * 10,  # Estimate
+            best_bid=snap["yes_price"] - 0.01,
+            best_ask=snap["yes_price"] + 0.01,
+            spread=snap["spread"],
+            end_date="",
+        )
+        
+        decision = engine.decide(market_snap)
+        
+        if decision.action.upper() == "HOLD":
+            logger.info("Claude: HOLD")
+            continue
+        
+        if decision.confidence < 0.6:
+            logger.info("Skipped: Low confidence %.2f", decision.confidence)
+            continue
+        
+        # Cap order size
+        size_usdc = min(decision.size_usdc, cfg.max_order_usdc)
+        
+        if cfg.dry_run:
+            logger.info(
+                "[DRY RUN] Kalshi: Would %s %s @ $%.2f for $%.2f",
+                decision.side, snap["ticker"], decision.price, size_usdc
+            )
+            tracker.record_trade(
+                token_id=snap["ticker"],
+                market_question=f"[DRY] Kalshi: {snap['question'][:50]}",
+                side=decision.side,
+                action=decision.action,
+                price=decision.price,
+                size_usdc=size_usdc,
+                confidence=decision.confidence,
+                reasoning=decision.reasoning,
+            )
+        else:
+            # Real Kalshi order
+            try:
+                side = "yes" if "YES" in decision.action.upper() else "no"
+                contracts = int(size_usdc / decision.price) if decision.price > 0 else 1
+                
+                order = kalshi.create_order(
+                    ticker=snap["ticker"],
+                    side=side,
+                    action="buy",
+                    size=max(1, contracts),
+                    price=decision.price,
+                    order_type="limit",
+                )
+                logger.info("Kalshi order placed: %s", order.order_id)
+                
+                tracker.record_trade(
+                    token_id=snap["ticker"],
+                    market_question=f"Kalshi: {snap['question'][:50]}",
+                    side=decision.side,
+                    action=decision.action,
+                    price=decision.price,
+                    size_usdc=size_usdc,
+                    confidence=decision.confidence,
+                    reasoning=decision.reasoning,
+                )
+            except Exception as e:
+                logger.error("Kalshi order failed: %s", e)
+
+
 def main() -> None:
     cfg = Config()
     logging.basicConfig(
@@ -135,25 +228,38 @@ def main() -> None:
         logger.info("*** DRY RUN MODE — no real orders will be placed ***")
 
     logger.info("Bot mode: %s", mode.upper())
+    logger.info("Platforms: Polymarket=%s, Kalshi=%s", cfg.poly_enabled, cfg.kalshi_enabled)
 
-    poly = PolymarketClient(cfg)
+    # Init Polymarket only if enabled
+    poly = None
+    if cfg.poly_enabled:
+        poly = PolymarketClient(cfg)
+        logger.info("Polymarket client initialized")
+    
+    # Init Kalshi only if enabled
+    kalshi = None
+    if cfg.kalshi_enabled:
+        from kalshi_client import KalshiClient
+        kalshi = KalshiClient()
+        logger.info("Kalshi client initialized (authenticated=%s)", kalshi.is_authenticated)
+    
     tracker = PositionTracker()
-    risk = RiskManager(cfg, poly, tracker)
+    risk = RiskManager(cfg, poly, tracker) if poly else None
 
     # Only init Claude engine if needed
     engine = None
     if mode in ("claude", "all"):
         engine = ClaudeEngine(cfg)
 
-    # Only init arb scanner if needed
+    # Only init arb scanner if needed (requires Polymarket)
     arb = None
-    if mode in ("arb", "all"):
+    if mode in ("arb", "all") and poly:
         from arb_scanner import ArbScanner
         arb = ArbScanner(cfg, poly, tracker)
 
-    # Only init cross-platform arb if needed
+    # Only init cross-platform arb if needed (requires both platforms)
     cross = None
-    if mode in ("cross", "all"):
+    if mode in ("cross", "all") and poly and kalshi:
         from cross_arb import CrossPlatformArb
         cross = CrossPlatformArb(cfg, poly, tracker)
 
@@ -161,11 +267,12 @@ def main() -> None:
     mm = None
     kalshi_mm = None
     if mode in ("mm", "all"):
-        from market_maker import MarketMaker
-        mm = MarketMaker(cfg, poly, tracker)
-        # Also init Kalshi MM
-        from kalshi_mm import KalshiMarketMaker
-        kalshi_mm = KalshiMarketMaker(cfg, tracker)
+        if poly:
+            from market_maker import MarketMaker
+            mm = MarketMaker(cfg, poly, tracker)
+        if kalshi:
+            from kalshi_mm import KalshiMarketMaker
+            kalshi_mm = KalshiMarketMaker(cfg, tracker)
 
     logger.info("Bot started. Poll interval: %ds", cfg.poll_interval)
 
@@ -204,7 +311,11 @@ def main() -> None:
                             logger.info("Cross-platform arb executed %d trades", n)
 
                     if engine:
-                        run_cycle(poly, engine, risk, tracker, cfg)
+                        # Run Claude analysis on enabled platforms
+                        if poly:
+                            run_cycle(poly, engine, risk, tracker, cfg)
+                        if kalshi:
+                            run_kalshi_cycle(kalshi, engine, tracker, cfg)
 
                 # Log position summary
                 tracker.log_summary()
