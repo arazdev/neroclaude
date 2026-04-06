@@ -275,26 +275,31 @@ def main() -> None:
             from kalshi_mm import KalshiMarketMaker
             kalshi_mm = KalshiMarketMaker(cfg, tracker)
 
-    logger.info("Bot started. Poll interval: %ds", cfg.poll_interval)
+    logger.info("Bot started. Mode: %s | Poll interval: %ds", mode.upper(), cfg.poll_interval)
 
     backoff = cfg.poll_interval
     arb_counter = 0  # arb runs more frequently
+    cycle_count = 0
 
     try:
         while True:
+            cycle_count += 1
             try:
                 # ── Fast strategies (run every cycle) ────────────
                 if arb:
+                    logger.info("── Cycle %d: Polymarket ARB ──", cycle_count)
                     n = arb.run_scan_cycle(cfg.dry_run)
                     if n:
                         logger.info("Arb scanner executed %d trades", n)
 
                 if mm:
+                    logger.info("── Cycle %d: Polymarket MM ──", cycle_count)
                     n = mm.run_cycle(cfg.dry_run)
                     if n:
                         logger.info("Market maker posted %d quotes", n)
                 
                 if kalshi_mm:
+                    logger.info("── Cycle %d: Kalshi MM ──", cycle_count)
                     n = kalshi_mm.run_cycle(cfg.dry_run)
                     if n:
                         logger.info("Kalshi market maker posted %d quotes", n)

@@ -1000,10 +1000,38 @@ export default function Dashboard() {
       icon = "🔐";
       message = "Kalshi connected & authenticated";
     }
-    // Cycle start
-    else if (msg.includes("Cycle")) {
+    // Cycle start - show mode info
+    else if (msg.includes("Cycle") && msg.includes(":")) {
       icon = "🔄";
-      message = "Scanning markets...";
+      // Pattern: "── Cycle 5: Kalshi MM ──"
+      const cycleMatch = msg.match(/Cycle\s*(\d+):\s*(\w+\s*\w*)/);
+      if (cycleMatch) {
+        const [, num, modeType] = cycleMatch;
+        message = `Cycle #${num}: ${modeType}`;
+      } else if (msg.includes("Kalshi Cycle")) {
+        message = "Scanning Kalshi markets...";
+      } else if (msg.includes("Poly")) {
+        message = "Scanning Polymarket...";
+      } else {
+        message = "Starting cycle...";
+      }
+    }
+    // MM specific logs
+    else if (msg.includes("Kalshi MM:")) {
+      icon = "📊";
+      if (msg.includes("no spread opportunities")) {
+        message = "MM: No profitable spreads found";
+      } else if (msg.includes("YES@")) {
+        // Pattern: "Kalshi MM: TICKER | YES@0.45 + NO@0.50 = $0.95 | profit=5%"
+        const mmMatch = msg.match(/Kalshi MM:\s*(\S+).*profit=([\d.]+)%/);
+        if (mmMatch) {
+          message = `MM Quote: ${mmMatch[1].substring(0,20)} (${mmMatch[2]}% profit)`;
+        } else {
+          message = msg.replace("Kalshi MM:", "MM:").substring(0, 50);
+        }
+      } else {
+        message = msg.replace("Kalshi MM:", "MM:").substring(0, 50);
+      }
     }
     // Claude decision from claude_engine module (detailed)
     else if (msg.includes("Claude decision:")) {
@@ -1048,6 +1076,13 @@ export default function Dashboard() {
         message = "Analyzing market...";
       }
     }
+    // Markets found
+    else if (msg.includes("short-term markets")) {
+      icon = "🔎";
+      const countMatch = msg.match(/Found\s*(\d+)/);
+      const count = countMatch?.[1] || "?";
+      message = `Found ${count} tradeable markets`;
+    }
     // Position tracker
     else if (msg.includes("No open positions")) {
       icon = "📭";
@@ -1062,6 +1097,11 @@ export default function Dashboard() {
     }
     else if (msg.includes("SELL") || msg.includes("SOLD")) {
       icon = "📤";
+    }
+    // Credits depleted warning
+    else if (msg.includes("credits depleted")) {
+      icon = "⚠️";
+      message = "Claude API credits depleted - waiting...";
     }
     // Errors/Warnings
     else if (level === "ERROR") {

@@ -135,7 +135,7 @@ class KalshiMarketMaker:
         quotes = self.find_opportunities()
         
         if not quotes:
-            logger.debug("No Kalshi MM opportunities found")
+            logger.info("Kalshi MM: Scanned markets - no spread opportunities found")
             return 0
         
         placed = 0
