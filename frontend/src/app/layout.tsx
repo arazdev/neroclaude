@@ -21,6 +21,10 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <style>{`
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
           @media (max-width: 768px) {
             .desktop-only { display: none !important; }
             .mobile-stack { flex-direction: column !important; }

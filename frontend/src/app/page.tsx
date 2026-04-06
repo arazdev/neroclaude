@@ -921,6 +921,7 @@ export default function Dashboard() {
   const [closedPos, setClosedPos] = useState<Position[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<string>("");
+  const [refreshing, setRefreshing] = useState(false);
 
   // Settings state
   const [showSettings, setShowSettings] = useState(false);
@@ -1083,6 +1084,7 @@ export default function Dashboard() {
   };
 
   const refresh = async () => {
+    setRefreshing(true);
     try {
       setError(null);
       const [s, positions, w] = await Promise.all([
@@ -1099,6 +1101,8 @@ export default function Dashboard() {
     } catch (e: unknown) {
       const err = e as Error;
       setError(err.message || "Failed to fetch");
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -1266,17 +1270,35 @@ export default function Dashboard() {
           </button>
           <button
             onClick={refresh}
+            disabled={refreshing}
             style={{
-              background: "#222",
-              color: "#fff",
-              border: "1px solid #333",
+              background: refreshing ? "#333" : "#222",
+              color: refreshing ? "#888" : "#fff",
+              border: "1px solid #444",
               borderRadius: 8,
               padding: "6px 12px",
-              cursor: "pointer",
+              cursor: refreshing ? "wait" : "pointer",
               fontSize: 12,
+              transition: "all 0.2s ease",
+              opacity: refreshing ? 0.7 : 1,
             }}
+            onMouseEnter={(e) => !refreshing && (e.currentTarget.style.background = "#444")}
+            onMouseLeave={(e) => !refreshing && (e.currentTarget.style.background = "#222")}
           >
-            Refresh
+            {refreshing ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ 
+                  display: "inline-block", 
+                  width: 12, 
+                  height: 12, 
+                  border: "2px solid #666",
+                  borderTopColor: "#fff",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }} />
+                Refreshing...
+              </span>
+            ) : "↻ Refresh"}
           </button>
         </div>
         </div>
