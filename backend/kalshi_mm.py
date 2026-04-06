@@ -41,11 +41,11 @@ class KalshiMarketMaker:
     """Posts two-sided quotes on Kalshi to earn the bid-ask spread."""
 
     # Minimum spread to participate
-    MIN_SPREAD = 0.04  # 4 cents (Kalshi has higher fees)
+    MIN_SPREAD = 0.02  # 2 cents (lowered - Kalshi markets are efficient)
     # How much below market to place our bids
-    BID_OFFSET = 0.02  # 2 cents below market
+    BID_OFFSET = 0.01  # 1 cent below market
     # Minimum profit per contract after fees (~7% Kalshi fee)
-    MIN_PROFIT_PER_CONTRACT = 0.02  # 2 cents
+    MIN_PROFIT_PER_CONTRACT = 0.01  # 1 cent
 
     def __init__(
         self,
@@ -64,16 +64,21 @@ class KalshiMarketMaker:
             logger.warning("Kalshi not authenticated - skipping MM")
             return []
         
-        markets = self.kalshi.get_active_markets(limit=50)
-        logger.info("Kalshi MM: Fetched %d markets to scan", len(markets))
+        # Fetch more markets since many will be illiquid
+        markets = self.kalshi.get_active_markets(limit=200)
+        logger.info("Kalshi MM: Fetched %d liquid markets", len(markets))
+        
+        # Sort by volume to prioritize active markets
+        markets.sort(key=lambda m: m.volume, reverse=True)
         
         # Log first 8 market tickers as sample
-        sample_tickers = [m.ticker[:20] for m in markets[:8]]
-        logger.info("Kalshi MM: Markets → %s%s", ", ".join(sample_tickers), "..." if len(markets) > 8 else "")
+        sample_tickers = [f"{m.ticker[:15]}(v:{m.volume})" for m in markets[:8]]
+        logger.info("Kalshi MM: Top markets → %s%s", ", ".join(sample_tickers), "..." if len(markets) > 8 else "")
         
         quotes: list[KalshiMMQuote] = []
         skipped_tight = 0
         skipped_profit = 0
+        spreads_seen: list[tuple[str, float]] = []  # Track all spreads
         
         for market in markets:
             yes_price = market.yes_price
@@ -81,6 +86,8 @@ class KalshiMarketMaker:
             spread = 1.0 - yes_price - no_price if (yes_price > 0 and no_price > 0) else 0
             if spread < 0:
                 spread = abs(spread)
+            
+            spreads_seen.append((market.ticker[:15], spread))
             
             # Log each market scan
             logger.debug(
@@ -100,6 +107,14 @@ class KalshiMarketMaker:
             else:
                 skipped_profit += 1
         
+        # Log top 5 spreads seen (even if not qualifying)
+        spreads_seen.sort(key=lambda x: x[1], reverse=True)
+        top5 = spreads_seen[:5]
+        logger.info(
+            "Kalshi MM: Top spreads → %s",
+            ", ".join(f"{t}={s*100:.1f}%" for t, s in top5)
+        )
+        
         if skipped_tight > 0 or skipped_profit > 0:
             logger.info(
                 "Kalshi MM: Skipped %d (tight spread <%.0f%%) + %d (low profit)",
@@ -117,6 +132,7 @@ class KalshiMarketMaker:
         
         # Kalshi prices are already 0-1 dollar scale
         if yes_price <= 0 or no_price <= 0:
+            logger.debug("  → %s SKIP: zero price (YES=%.2f, NO=%.2f)", market.ticker[:20], yes_price, no_price)
             return None
         
         # Check spread (1 - yes - no = spread)
@@ -128,6 +144,9 @@ class KalshiMarketMaker:
         if spread < self.MIN_SPREAD:
             return None
         
+        # Log the actual prices for debugging
+        logger.info("  → %s: YES=%.2f NO=%.2f (sum=$%.2f)", market.ticker[:20], yes_price, no_price, yes_price + no_price)
+        
         # Our bid prices (below market to increase fill probability)
         our_yes_bid = max(0.01, yes_price - self.BID_OFFSET)
         our_no_bid = max(0.01, no_price - self.BID_OFFSET)
@@ -138,10 +157,12 @@ class KalshiMarketMaker:
         
         # Skip if profit too low (after ~7% Kalshi fees)
         if profit_per_contract < self.MIN_PROFIT_PER_CONTRACT:
+            logger.info("  → %s SKIP: low profit (%.1f%% < %.1f%%)", market.ticker[:20], profit_per_contract*100, self.MIN_PROFIT_PER_CONTRACT*100)
             return None
         
         # Skip if total cost > $1 (would lose money)
         if total_cost >= 1.0:
+            logger.info("  → %s SKIP: cost>=1 (cost=$%.2f)", market.ticker[:20], total_cost)
             return None
         
         # Calculate contract size based on order limit

@@ -154,13 +154,31 @@ class KalshiClient:
     def parse_market(self, raw: dict[str, Any]) -> KalshiMarket | None:
         """Parse a raw Kalshi market dict into our model."""
         try:
+            # Get volume first - skip illiquid markets
+            volume = int(float(raw.get("volume_fp", 0)))
+            liquidity = float(raw.get("liquidity_dollars", 0))
+            
+            # Skip markets with zero volume AND zero liquidity (new/dead markets)
+            if volume == 0 and liquidity == 0:
+                return None
+            
             # Kalshi API v2 uses dollar prices (0-1.00) in "*_dollars" fields
-            yes_price = float(raw.get("yes_ask_dollars", raw.get("last_price_dollars", 0)))
-            no_price = float(raw.get("no_ask_dollars", 0))
-
-            # Fallback: if no_ask missing, derive from yes
-            if no_price == 0 and yes_price > 0:
-                no_price = 1.0 - yes_price
+            # Use yes_bid (what we can sell at) and no_bid for MM
+            yes_ask = float(raw.get("yes_ask_dollars", 0))  # what we buy YES at
+            no_ask = float(raw.get("no_ask_dollars", 0))    # what we buy NO at
+            
+            # Fallback to last_price if no ask available
+            if yes_ask == 0:
+                yes_ask = float(raw.get("last_price_dollars", 0))
+            
+            # For NO, if not available derive from YES (risky but better than 0)
+            # Actually for MM we need REAL prices - skip if no NO ask
+            if no_ask == 0 or no_ask >= 1.0:
+                no_ask = 1.0 - yes_ask if yes_ask > 0 else 0
+            
+            # Skip if still no valid prices
+            if yes_ask <= 0:
+                return None
 
             # Get close/expiration time - Kalshi uses close_time or expected_expiration_time
             close_time = raw.get("close_time", "")
@@ -173,9 +191,9 @@ class KalshiClient:
                 ticker=raw.get("ticker", ""),
                 title=raw.get("title", ""),
                 subtitle=raw.get("yes_sub_title", ""),
-                yes_price=yes_price,
-                no_price=no_price,
-                volume=int(float(raw.get("volume_fp", 0))),
+                yes_price=yes_ask,
+                no_price=no_ask,
+                volume=volume,
                 open_interest=int(float(raw.get("open_interest_fp", 0))),
                 status=raw.get("status", ""),
                 category=raw.get("market_type", ""),
