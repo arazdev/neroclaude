@@ -396,14 +396,18 @@ function SettingsPanel({
           </div>
         </div>
 
-        {/* BOT MODE */}
+        {/* BOT MODE - filtered by enabled platforms */}
         <div style={{ marginBottom: 20 }}>
           <label style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
             Bot Mode
+            <span style={{ color: "#666", fontSize: 11, marginLeft: 8 }}>
+              {!local.poly_enabled && !local.kalshi_enabled && "(enable a platform first)"}
+            </span>
           </label>
           <select
             value={local.bot_mode}
             onChange={(e) => setLocal({ ...local, bot_mode: e.target.value })}
+            disabled={!local.poly_enabled && !local.kalshi_enabled}
             style={{
               width: "100%",
               background: "#0d0d15",
@@ -412,14 +416,39 @@ function SettingsPanel({
               borderRadius: 8,
               padding: "10px 12px",
               fontSize: 14,
+              opacity: (!local.poly_enabled && !local.kalshi_enabled) ? 0.5 : 1,
             }}
           >
-            <option value="claude">Claude AI Only</option>
-            <option value="arb">Arbitrage Only</option>
-            <option value="cross">Cross-Platform Only</option>
-            <option value="mm">Market Making Only</option>
-            <option value="all">All Strategies</option>
+            {/* Claude works with both platforms */}
+            <option value="claude">🤖 Claude AI (directional trading)</option>
+            
+            {/* ARB only works with Polymarket */}
+            {local.poly_enabled && (
+              <option value="arb">⚡ Arbitrage (Polymarket YES+NO mispricing)</option>
+            )}
+            
+            {/* Cross requires BOTH platforms */}
+            {local.poly_enabled && local.kalshi_enabled && (
+              <option value="cross">🔄 Cross-Platform (Poly vs Kalshi arb)</option>
+            )}
+            
+            {/* MM works with both platforms */}
+            <option value="mm">📊 Market Making (earn the spread)</option>
+            
+            {/* All only makes sense with Polymarket (since arb/cross need it) */}
+            {local.poly_enabled && (
+              <option value="all">🎯 All Strategies</option>
+            )}
           </select>
+          
+          {/* Mode description */}
+          <div style={{ fontSize: 11, color: "#666", marginTop: 6 }}>
+            {local.bot_mode === "claude" && "AI analyzes markets → BUY/SELL/HOLD decisions (uses API credits)"}
+            {local.bot_mode === "arb" && "Finds YES+NO mispricing on Polymarket (no AI needed)"}
+            {local.bot_mode === "cross" && "Arbitrages price differences between Kalshi & Polymarket"}
+            {local.bot_mode === "mm" && "Posts bid/ask orders to earn spread (no AI needed)"}
+            {local.bot_mode === "all" && "Runs all available strategies each cycle"}
+          </div>
         </div>
 
         {/* CLAUDE MODEL */}
