@@ -133,6 +133,9 @@ def get_summary():
     tracker._positions = tracker._load()
     open_pos = tracker.open_positions
     closed_pos = tracker.closed_positions
+    
+    # Read fresh values from .env (not stale cfg)
+    env = read_env()
 
     # Categorize by strategy
     arb_trades = [p for p in open_pos if p.action in ("ARB_YES", "ARB_NO")]
@@ -145,10 +148,10 @@ def get_summary():
         "closed_count": len(closed_pos),
         "total_exposure": tracker.total_exposure(),
         "realized_pnl": tracker.total_realized_pnl(),
-        "max_position_usdc": cfg.max_position_usdc,
-        "max_order_usdc": cfg.max_order_usdc,
-        "dry_run": cfg.dry_run,
-        "bot_mode": cfg.bot_mode,
+        "max_position_usdc": float(env.get("MAX_POSITION_USDC", str(cfg.max_position_usdc))),
+        "max_order_usdc": float(env.get("MAX_ORDER_USDC", str(cfg.max_order_usdc))),
+        "dry_run": env.get("DRY_RUN", "true").lower() == "true",
+        "bot_mode": env.get("BOT_MODE", "claude"),
         "strategies": {
             "claude": {"open": len(claude_trades), "exposure": sum(p.size_usdc for p in claude_trades)},
             "arb": {"open": len(arb_trades), "exposure": sum(p.size_usdc for p in arb_trades)},
