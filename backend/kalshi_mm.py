@@ -65,12 +65,46 @@ class KalshiMarketMaker:
             return []
         
         markets = self.kalshi.get_active_markets(limit=50)
+        logger.info("Kalshi MM: Fetched %d markets to scan", len(markets))
+        
+        # Log first 8 market tickers as sample
+        sample_tickers = [m.ticker[:20] for m in markets[:8]]
+        logger.info("Kalshi MM: Markets → %s%s", ", ".join(sample_tickers), "..." if len(markets) > 8 else "")
+        
         quotes: list[KalshiMMQuote] = []
+        skipped_tight = 0
+        skipped_profit = 0
         
         for market in markets:
+            yes_price = market.yes_price
+            no_price = market.no_price
+            spread = 1.0 - yes_price - no_price if (yes_price > 0 and no_price > 0) else 0
+            if spread < 0:
+                spread = abs(spread)
+            
+            # Log each market scan
+            logger.debug(
+                "  → %s | YES=%.2f NO=%.2f | spread=%.1f%%",
+                market.ticker[:25], yes_price, no_price, spread * 100
+            )
+            
             quote = self._build_quote(market)
             if quote:
                 quotes.append(quote)
+                logger.info(
+                    "Kalshi MM: ✓ %s spread=%.1f%% (potential profit)",
+                    market.ticker[:30], quote.spread_profit * 100
+                )
+            elif spread < self.MIN_SPREAD:
+                skipped_tight += 1
+            else:
+                skipped_profit += 1
+        
+        if skipped_tight > 0 or skipped_profit > 0:
+            logger.info(
+                "Kalshi MM: Skipped %d (tight spread <%.0f%%) + %d (low profit)",
+                skipped_tight, self.MIN_SPREAD * 100, skipped_profit
+            )
         
         # Sort by profit potential
         quotes.sort(key=lambda q: q.spread_profit, reverse=True)

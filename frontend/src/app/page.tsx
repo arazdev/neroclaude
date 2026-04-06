@@ -1019,8 +1019,34 @@ export default function Dashboard() {
     // MM specific logs
     else if (msg.includes("Kalshi MM:")) {
       icon = "📊";
-      if (msg.includes("no spread opportunities")) {
+      if (msg.includes("Fetched") && msg.includes("markets to scan")) {
+        const countMatch = msg.match(/Fetched\s*(\d+)/);
+        message = `MM: Fetched ${countMatch?.[1] || "?"} markets`;
+      } else if (msg.includes("Markets →")) {
+        icon = "🔎";
+        // Extract first 3-4 tickers
+        const tickerPart = msg.split("→")[1]?.trim() || "";
+        const tickers = tickerPart.split(",").slice(0, 3).map(t => t.trim().substring(0, 15));
+        message = `Scanning: ${tickers.join(", ")}...`;
+      } else if (msg.includes("Skipped")) {
+        icon = "⏭️";
+        // "Skipped 37 (tight spread <4%) + 13 (low profit)"
+        const tightMatch = msg.match(/Skipped\s*(\d+)\s*\(tight/);
+        const lowMatch = msg.match(/\+\s*(\d+)\s*\(low/);
+        const tight = tightMatch?.[1] || "0";
+        const low = lowMatch?.[1] || "0";
+        message = `Skipped: ${tight} tight + ${low} low profit`;
+      } else if (msg.includes("no spread opportunities")) {
         message = "MM: No profitable spreads found";
+      } else if (msg.includes("✓")) {
+        icon = "✅";
+        // "✓ TICKER spread=5.0% (potential profit)"
+        const profitMatch = msg.match(/✓\s*(\S+).*spread=([\d.]+)%/);
+        if (profitMatch) {
+          message = `Found: ${profitMatch[1].substring(0,20)} (${profitMatch[2]}% spread)`;
+        } else {
+          message = msg.replace("Kalshi MM:", "MM:").substring(0, 50);
+        }
       } else if (msg.includes("YES@")) {
         // Pattern: "Kalshi MM: TICKER | YES@0.45 + NO@0.50 = $0.95 | profit=5%"
         const mmMatch = msg.match(/Kalshi MM:\s*(\S+).*profit=([\d.]+)%/);
